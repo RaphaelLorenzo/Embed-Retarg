@@ -4,6 +4,44 @@ import torch.nn.functional as F
 import numpy as np
 import copy
 
+def crop_scale_frame(motion, scale_range=[1, 1]):
+    '''
+        Motion: [T, 17, 3]. (x, y, z)
+        Normalize to [-1, 1]
+    '''
+    result = copy.deepcopy(motion)
+    T = motion.shape[0]
+    xmins = []
+    xmaxs = []
+    ymins = []
+    ymaxs = []
+    for t in range(T):
+        frame_motion = motion[t]
+        valid_coords_mask = frame_motion[:, 2]!=0
+        valid_coords = frame_motion[valid_coords_mask][:,:2]
+        if len(valid_coords) < 4:
+            return np.zeros(motion.shape)
+        xmins.append(min(valid_coords[:,0]))
+        xmaxs.append(max(valid_coords[:,0]))
+        ymins.append(min(valid_coords[:,1]))
+        ymaxs.append(max(valid_coords[:,1]))
+
+    ratio = np.random.uniform(low=scale_range[0], high=scale_range[1], size=1)[0]
+    scales = [max(xmax-xmin, ymax-ymin) * ratio for xmin, xmax, ymin, ymax in zip(xmins, xmaxs, ymins, ymaxs)]
+    xmins, ymins, xmaxs, ymaxs = np.array(xmins), np.array(ymins), np.array(xmaxs), np.array(ymaxs) # (T,)
+    scales = np.array(scales) # (T,)
+        
+    xs = (xmins+xmaxs-scales) / 2
+    ys = (ymins+ymaxs-scales) / 2
+    xy_centers = np.stack([xs,ys], axis=-1)
+    xy_centers = xy_centers.reshape(T, 1, 2)
+    scales = scales.reshape(T, 1, 1)
+    result[...,:2] = (motion[..., :2] - xy_centers) / scales
+    result[...,:2] = (result[..., :2] - 0.5) * 2
+    result = np.clip(result, -1, 1)
+    return result
+    
+
 def crop_scale(motion, scale_range=[1, 1]):
     '''
         Motion: [(M), T, 17, 3].

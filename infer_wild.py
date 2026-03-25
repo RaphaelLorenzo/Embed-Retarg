@@ -68,7 +68,7 @@ if opts.wild_dataset:
         # Scale to [-1,1]
         wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, scale_range=[1,1], focus=opts.focus)
 else:
-    wild_dataset = EmbedRetargDataset(opts.data_path, scale_range=[1,1])
+    wild_dataset = EmbedRetargDataset(opts.data_path, scale_by="sequence")
 
 
 test_loader = DataLoader(wild_dataset, **testloader_params)
@@ -76,9 +76,12 @@ test_loader = DataLoader(wild_dataset, **testloader_params)
 results_all = []
 input_all = []
 files_all = []
+target_pos_all = []
+seq_idx_all = []
 with torch.no_grad():
-    for batch_input, file in tqdm(test_loader):
+    for batch_input, target_pos, file, seq_idx in tqdm(test_loader):
         input_all.append(batch_input)
+        target_pos_all.append(target_pos)
         N, T = batch_input.shape[:2]
         if torch.cuda.is_available():
             batch_input = batch_input.cuda().float()
@@ -99,12 +102,26 @@ with torch.no_grad():
             pass
         if args.gt_2d:
             predicted_3d_pos[...,:2] = batch_input[...,:2]
-        results_all.append(predicted_3d_pos.cpu().numpy())
+        results_all.append(predicted_3d_pos) #.cpu().numpy())
         files_all.append(file[0])
+        seq_idx_all.append(seq_idx)
 
 
-def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
-                      g1_pos=None):
+
+
+
+
+## RENDERING FUNCTIONS ##
+
+from scipy.spatial.transform import Rotation as R_scipy
+
+def quat_to_ypr(q):
+    """Quaternion (x, y, z, w) → (yaw, pitch, roll) in degrees."""
+    yaw, pitch, roll = R_scipy.from_quat(q).as_euler('ZYX', degrees=True)
+    return yaw, pitch, roll
+
+def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fps=30,
+                      g1_pos=None, orig_quat=None, g1_quat=None):
     """
     Render side-by-side comparison video (3 or 4 panels).
 
@@ -114,10 +131,10 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
       3. 3D network output     (17 joints, axes: right / down / front)
       4. 3D G1 robot skeleton  (38 joints, axes: right / front / up)  [optional]
     """
-    T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0])
+    T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0], target_pos.shape[0])
     if g1_pos is not None:
         T = min(T, g1_pos.shape[0])
-    n_panels = 4 if g1_pos is not None else 3
+    n_panels = 5 if g1_pos is not None else 3
 
     # --- skeleton topologies --------------------------------------------------
     er_pairs = [
@@ -190,6 +207,8 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
 
     if g1_pos is not None:
         g1_c, g1_r = cube_limits(g1_pos[:T])
+    
+    g1rr_c, g1rr_r = cube_limits(target_pos[:T])
 
     # --- frame loop -----------------------------------------------------------
     skip_frames = 3
@@ -211,8 +230,11 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
         ax1.set_zlim(orig_c[2]-orig_r, orig_c[2]+orig_r)
         ax1.view_init(elev=15., azim=-70)
         r0 = orig_pos[f, 0]
-        ax1.set_title(f'Original 3D (22j)\nroot=({r0[0]:.2f}, {r0[1]:.2f}, {r0[2]:.2f})',
-                      fontsize=12)
+        t1 = f'Original 3D (22j)\nroot=({r0[0]:.2f}, {r0[1]:.2f}, {r0[2]:.2f})'
+        if orig_quat is not None:
+            y0, p0, rl0 = quat_to_ypr(orig_quat[f, 0])
+            t1 += f'\nypr=({y0:.1f}\u00b0, {p0:.1f}\u00b0, {rl0:.1f}\u00b0)'
+        ax1.set_title(t1, fontsize=11)
 
         # ---- panel 2: input 2D (x-right, y-down) ----------------------------
         ax2 = fig.add_subplot(1, n_panels, 2)
@@ -256,8 +278,25 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
             ax4.set_zlim(g1_c[2]-g1_r, g1_c[2]+g1_r)
             ax4.view_init(elev=15., azim=-70)
             rg = g1_pos[f, 0]
-            ax4.set_title(f'G1 Robot 3D (38j)\nroot=({rg[0]:.2f}, {rg[1]:.2f}, {rg[2]:.2f})',
-                          fontsize=12)
+            t4 = f'G1 Robot 3D (38j)\nroot=({rg[0]:.2f}, {rg[1]:.2f}, {rg[2]:.2f})'
+            if g1_quat is not None:
+                yg, pg, rlg = quat_to_ypr(g1_quat[f, 0])
+                t4 += f'\nypr=({yg:.1f}\u00b0, {pg:.1f}\u00b0, {rlg:.1f}\u00b0)'
+            ax4.set_title(t4, fontsize=11)
+
+            # ---- panel 5: G1 root-relative 3D -----------------------------------
+            ax5 = fig.add_subplot(1, n_panels, 5, projection='3d')
+            jrr = target_pos[f]
+            for p in g1_pairs:
+                ax5.plot(jrr[p, 0], jrr[p, 1], jrr[p, 2],
+                         color=limb_color(p, g1_left, g1_right),
+                         lw=2, marker='o', mfc='w', ms=2, mew=1)
+            ax5.set_xlim(g1rr_c[0]-g1rr_r, g1rr_c[0]+g1rr_r)
+            ax5.set_ylim(g1rr_c[1]-g1rr_r, g1rr_c[1]+g1rr_r)
+            ax5.set_zlim(g1rr_c[2]-g1rr_r, g1rr_c[2]+g1rr_r)
+            ax5.view_init(elev=15., azim=-70)
+            t5 = 'G1 Root-Aligned (38j)\nroot=(0, 0, 0) ypr=(0\u00b0, 0\u00b0, 0\u00b0)'
+            ax5.set_title(t5, fontsize=11)
 
         fig.tight_layout()
         fig.canvas.draw()
@@ -269,37 +308,42 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
     print(f"Saved comparison video → {save_path}")
 
 
-for file, inp, result in zip(files_all, input_all, results_all):
+for file, inp, result, target_pos, seq_idx in zip(files_all, input_all, results_all, target_pos_all, seq_idx_all):
     print(file)
     outfilename = file.replace(opts.data_path, '')
     timestamp = time.strftime("%Y%m%d_%H%M%S")
-    outfilename = outfilename.replace('.npz', f'{timestamp}.mp4')
+    seq_idx_str = f'{seq_idx[0]:03d}'
+    outfilename = outfilename.replace('.npz', f'{timestamp}_{seq_idx_str}.mp4')
     outfilename = outfilename.replace('/', '_')
 
+    # data from the inference loop
+    input_pos = inp[0].cpu().numpy()                           # (T, 17, 3)  x-right / y-down / conf
+    output_pos = result[0].cpu().numpy()                       # (T, 17, 3)  right / down / front
+    target_pos = target_pos[0].cpu().numpy()                   # (T, 38, 3)  right / front / up
+
+    # data from the original file
     orig_data = np.load(file)
-    orig_pos = orig_data['body_pos_w']          # (T, 22, 3)  right / front / up
-
-    g1_pos = None
+    start = seq_idx * 81
+    end = start + 243
+    orig_pos = orig_data['body_pos_w'][start:end]          # (T, 22, 3)  right / front / up
+    orig_quat = orig_data['body_quat_w'][start:end]      # (T, 22, 4)  x, y, z, w
+    orig_quat = orig_quat[:, :, [1, 2, 3, 0]] # (T, 22, 4)  x, y, z, w
+    
+    # data from the G1 robot file
     g1_path = os.path.join(os.path.dirname(file), 'motion_shape_g1.npz')
-    if os.path.exists(g1_path):
-        g1_data = np.load(g1_path)
-        g1_pos = g1_data['body_pos_w']          # (T, 38, 3)  right / front / up
+    assert os.path.exists(g1_path), f"G1 data not found at {g1_path}"
+    g1_data = np.load(g1_path)
+    g1_pos = g1_data['body_pos_w'][start:end]          # (T, 38, 3)  right / front / up
+    g1_quat = g1_data['body_quat_w'][start:end] if g1_pos is not None else None # (T, 38, 4)  w, x, y, z
+    g1_quat = g1_quat[:, :, [1, 2, 3, 0]] # (T, 38, 4)  x, y, z, w
 
-    input_pos = inp[0].numpy()                   # (T, 17, 3)  x-right / y-down / conf
-    output_pos = result[0]                       # (T, 17, 3)  right / down / front
-
-    T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0])
-    if g1_pos is not None:
-        T = min(T, g1_pos.shape[0])
-        g1_pos = g1_pos[:T]
-    orig_pos   = orig_pos[:T]
-    input_pos  = input_pos[:T]
-    output_pos = output_pos[:T]
-
+    # render the comparison video
     save_path = os.path.join(opts.out_path, outfilename)
-    render_comparison(orig_pos, input_pos, output_pos, save_path,
-                      fps=fps_in, g1_pos=g1_pos)
+    render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path,
+                      fps=fps_in, g1_pos=g1_pos,
+                      orig_quat=orig_quat, g1_quat=g1_quat)
 
+    # save the data to a npz file
     output_npz = {
         'orig_pos': orig_pos,
         'input_pos': input_pos,

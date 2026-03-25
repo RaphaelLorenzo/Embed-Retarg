@@ -15,7 +15,9 @@ import json
 import pickle
 import math
 from torch.utils.data import Dataset, DataLoader
-from lib.utils.utils_data import crop_scale
+from lib.utils.utils_data import crop_scale, crop_scale_frame
+
+from scipy.spatial.transform import Rotation as R_scipy
 
 def halpe2h36m(x):
     '''
@@ -333,11 +335,49 @@ def project_to_image(positions_3d, cam_position, cam_rotation, intrinsics):
     return result
 
 
+def root_align(positions, quaternions):
+    """Re-express joint positions in the root frame each frame.
+
+    For every frame the root (joint 0) is moved to the origin and all
+    joints are rotated by the inverse of the root orientation, so the
+    skeleton faces a fixed direction with zero root yaw/pitch/roll.
+
+    Args:
+        positions:   (T, V, 3) world joint positions
+        quaternions: (T, V, 4) world joint orientations (x, y, z, w)
+
+    Returns:
+        aligned: (T, V, 3) root-relative, root-orientation-aligned positions
+    """
+    T, V, _ = positions.shape
+    root_pos  = positions[:, 0, :]      # (T, 3)
+    root_quat = quaternions[:, 0, :]    # (T, 4)  xyzw
+
+    root_rot_inv = R_scipy.from_quat(root_quat).inv()
+
+    translated = positions - root_pos[:, np.newaxis, :]          # (T, V, 3)
+    aligned = np.empty_like(translated)
+    for t in range(T):
+        aligned[t] = root_rot_inv[t].apply(translated[t])
+    return aligned
+
 class EmbedRetargDataset(Dataset):
-    def __init__(self, data_path, max_len=243, scale_range=None, project_to_image_params={"cam_position":(0.0,-5.0,1.5), "cam_rotation":(0.0,0.0,0.0), "intrinsics":H36M_INTRINSICS}):
+    def __init__(self, 
+                 data_path, 
+                 max_len=243, 
+                 stride=81, 
+                 root_rel_target=True,
+                 scale_by="sequence",
+                 scale_range=[1,1], 
+                 project_to_image_params={"cam_position":(0.0,-5.0,1.5), "cam_rotation":(0.0,0.0,0.0), "intrinsics":H36M_INTRINSICS},
+                 filter_by_subject=None):
+        
         self.max_len = max_len
+        self.stride = stride
         self.scale_range = scale_range
         self.project_to_image_params = project_to_image_params # do proper reprojection or just use x,z coordinates
+        self.root_rel_target = root_rel_target
+        self.scale_by = scale_by
         
         # List all npz files in the data path
         files = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_path)) for f in fn if f.endswith(".npz")]
@@ -348,52 +388,70 @@ class EmbedRetargDataset(Dataset):
         
         self.files = files
         print(f"Found {len(self.files)} files")
-        print(self.files)
+        # print(self.files)
         
         self.files = [file for file in files if "Walking" in file]
         self.files = self.files[:1]
         
+        self.inputs = [] # list of (file, seq_idx, start, end) to mitigate the long sequences
+        for file in self.files:
+            data = np.load(file)
+            body_pos_w = data['body_pos_w']
+            seq_len = body_pos_w.shape[0]
+            
+            if seq_len > self.max_len:
+                for seq_idx,i in enumerate(range(0, seq_len, self.stride)):
+                    self.inputs.append((file, seq_idx, i, min(i + self.max_len, seq_len)))
+
+                    # check we can be visible in the reprojection (approximatively)
+                    if self.project_to_image_params is not None:
+                        cam_position = self.project_to_image_params['cam_position']
+                        cam_x = cam_position[0]
+                        cam_y = cam_position[1]
+                        assert(np.all(body_pos_w[:, :, 1] > cam_y+1.0)), f"Body is not in front of the camera for file {file}" # always in front of the camera
+                        
+                        x_rel = body_pos_w[:, :, 0] - cam_x
+                        y_rel = body_pos_w[:, :, 1] - cam_y
+                        angles = np.arctan(x_rel / y_rel)
+                        angles = np.rad2deg(angles)
+                        
+                        # print(x_rel[0], y_rel[0], angles[0])
+                        
+                        assert(np.all(angles < 30.0)), f"Body is too far on the left or right of the camera for file {file} : {angles}" # not too far on the left or right of the camera
+                        assert(np.all(angles > -30.0)), f"Body is too far on the left or right of the camera for file {file} : {angles}" # not too far on the left or right of the camera
+                    
+            else:
+                self.inputs.append((file, 0, 0, seq_len))
+        
     def __len__(self):
         'Denotes the total number of samples'
-        return len(self.files)
+        return len(self.inputs)
     
     def __getitem__(self, index):
         'Generates one sample of data'
-        file = self.files[index]
+        file, seq_idx, start, end = self.inputs[index]
         data = np.load(file)
         
-        # print(data.keys()) 
-        # KeysView(NpzFile 
-        # '/home/raphael/Projects/github/accad_subset_random_shapes/Female1General_c3d/A1_-_Stand_stageii/motion_shape.npz' 
-        # with keys: body_link_names, body_pos_w, body_quat_w, betas, fps)
+        input_body_pos_w = data['body_pos_w'][start:end]
+        # input_body_quat_w = data['body_quat_w'][start:end]
         
-        # print(data['body_link_names']) 
-        # ['pelvis' 'left_hip' 'right_hip' 'spine1' 'left_knee' 'right_knee'
-        # 'spine2' 'left_ankle' 'right_ankle' 'spine3' 'left_foot' 'right_foot'
-        # 'neck' 'left_collar' 'right_collar' 'head' 'left_shoulder'
-        # 'right_shoulder' 'left_elbow' 'right_elbow' 'left_wrist' 'right_wrist']
+        target_file = os.path.join(os.path.dirname(file), 'motion_shape_g1.npz')
+        target_data = np.load(target_file)
+        target_body_pos_w = target_data['body_pos_w'][start:end]          # (T, 38, 3)  right / front / up
+        target_body_quat_w = target_data['body_quat_w'][start:end]      # (T, 38, 4)  w, x, y, z
         
-        print(data['body_pos_w'].shape) # (T, 22, 3) (xyz -> right, front, up)
-        
+        if self.root_rel_target:
+            target_body_quat_w = target_body_quat_w[:, :, [1, 2, 3, 0]] # (T, 38, 4)  x, y, z, w
+            target_pos = root_align(target_body_pos_w, target_body_quat_w) # (T, 38, 3)  right / front / up
+
         if self.project_to_image_params is not None:
             positions = project_to_image(
-                data['body_pos_w'],
+                input_body_pos_w,
                 self.project_to_image_params['cam_position'],
                 self.project_to_image_params['cam_rotation'],
                 self.project_to_image_params['intrinsics'])
-            
-            # ### DEBUG MATPLOTLIB ###
-            # print(positions.shape)
-            # import matplotlib.pyplot as plt
-            # plt.figure(figsize=(10, 10))
-            # plt.scatter(positions[0, :, 0], positions[0, :, 1])
-            # plt.savefig('debug_positions.png')
-            # exit(0)
-            #########################################################
-            
-            
         else:
-            positions = data['body_pos_w']
+            positions = input_body_pos_w
             positions = positions[:, :, [0, 2, 1]] # (T, 22, 3) (x, z, y)
             positions[:, :, 1] = -positions[:, :, 1] # (T, 22, 3) (x, -z, y)
             positions[:, :, 2] = 1.0 # full confidence
@@ -401,10 +459,9 @@ class EmbedRetargDataset(Dataset):
             
         position_h36m_2d = embedretarg2h36m(positions)
         
-        if position_h36m_2d.shape[0] > self.max_len:
-            position_h36m_2d = position_h36m_2d[:self.max_len]
-
-        if self.scale_range:
+        if self.scale_by == "sequence":
             position_h36m_2d = crop_scale(position_h36m_2d, self.scale_range) 
+        elif self.scale_by == "frame":
+            position_h36m_2d = crop_scale_frame(position_h36m_2d, self.scale_range)
     
-        return position_h36m_2d, file
+        return position_h36m_2d, target_pos, file, seq_idx
