@@ -23,7 +23,7 @@ num_joints: 17 # original joint numbers in pretrained model
 remap_joints_head: False
 
 # Data
-data_path: /home/raphael/Projects/github/accad_subset_random_shapes
+data_path: ../accad_subset_random_shapes
 clip_len: 243
 data_stride: 81
 rootrel: True
