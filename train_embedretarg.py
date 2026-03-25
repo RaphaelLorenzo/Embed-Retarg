@@ -8,7 +8,7 @@ from tqdm import tqdm
 from time import time
 import copy
 import random
-import prettytable
+# import prettytable
 
 import torch
 import torch.nn as nn
