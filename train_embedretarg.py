@@ -144,7 +144,7 @@ def save_checkpoint(chk_path, epoch, lr, optimizer, model_pos, min_loss):
 def train_epoch(args, model_pos, train_loader, train_losses, optimizer, has_gt):
     model_pos.train()
     
-    for idx, (batch_input, batch_gt, file, seq_idx) in tqdm(enumerate(train_loader)):    
+    for idx, (batch_input, batch_gt, file, seq_idx) in tqdm(enumerate(train_loader), total=len(train_loader)):    
         
         batch_size = len(batch_input)        
         
@@ -192,7 +192,7 @@ def train_epoch(args, model_pos, train_loader, train_losses, optimizer, has_gt):
 def test_epoch(args, model_pos, test_loader, test_losses):
     model_pos.eval()
     
-    for idx, (batch_input, batch_gt, file, seq_idx) in tqdm(enumerate(test_loader)):    
+    for idx, (batch_input, batch_gt, file, seq_idx) in tqdm(enumerate(test_loader), total=len(test_loader)):    
         
         batch_size = len(batch_input)        
         
