@@ -164,16 +164,17 @@ def embedretarg2h36m(x):
     '''
     T, V, C = x.shape
     y = np.zeros([T, 17, C])
-    y[:, 0, :]  = x[:, 0, :]                            # root    ← pelvis
+    # y[:, 0, :]  = x[:, 0, :]                          # root    ← pelvis
+    y[:, 0, :]  = x[:, 2, :] * 0.5 + x[:, 1, :] * 0.5   # root    ← mid(left_hip, right_hip)
     y[:, 1, :]  = x[:, 2, :]                            # rhip    ← right_hip
     y[:, 2, :]  = x[:, 5, :]                            # rkne    ← right_knee
     y[:, 3, :]  = x[:, 8, :]                            # rank    ← right_ankle
     y[:, 4, :]  = x[:, 1, :]                            # lhip    ← left_hip
     y[:, 5, :]  = x[:, 4, :]                            # lkne    ← left_knee
     y[:, 6, :]  = x[:, 7, :]                            # lank    ← left_ankle
-    y[:, 7, :]  = (x[:, 0, :] + x[:, 12, :]) * 0.5     # belly   ← mid(pelvis, neck)
+    y[:, 7, :]  = (x[:, 0, :] + x[:, 12, :]) * 0.5      # belly   ← mid(pelvis, neck)
     y[:, 8, :]  = x[:, 12, :]                           # neck    ← neck
-    y[:, 9, :]  = (x[:, 12, :] + x[:, 15, :]) * 0.5    # nose    ← mid(neck, head)
+    y[:, 9, :]  = (x[:, 12, :] + x[:, 15, :]) * 0.5     # nose    ← mid(neck, head)
     y[:, 10, :] = x[:, 15, :]                           # head    ← head
     y[:, 11, :] = x[:, 16, :]                           # lsho    ← left_shoulder
     y[:, 12, :] = x[:, 18, :]                           # lelb    ← left_elbow
@@ -251,11 +252,93 @@ class WildDetDataset(Dataset):
         st = index*self.clip_len
         end = min((index+1)*self.clip_len, len(self.vid_all))
         return self.vid_all[st:end]
-    
+
+
+H36M_INTRINSICS = {
+    "K":
+    [
+        [
+            1145.04940458804,
+            0.0,
+            512.541504956548
+        ],
+        [
+            0.0,
+            1143.78109572365,
+            515.4514869776
+        ],
+        [
+            0.0,
+            0.0,
+            1.0
+        ]
+    ],
+    "distortion": 
+    [
+        -0.207098910824901,
+        0.247775183068982,
+        -0.00142447157470321,
+        -0.000975698859470499,
+        -0.00307515035078854
+    ]
+}
+
+
+
+def project_to_image(positions_3d, cam_position, cam_rotation, intrinsics):
+    """Project 3D world positions onto a virtual image plane.
+
+    Args:
+        positions_3d: (T, V, 3) world coordinates (right, front, up)
+        cam_position: (3,) camera location in world space
+        cam_rotation: (3,) extra Euler angles (rx, ry, rz) in radians applied
+                      on top of the base world→camera rotation
+        intrinsics:   dict with ``"K"`` (3×3 list) and optional ``"distortion"``
+
+    Returns:
+        (T, V, 3) with channels (u, v, confidence=1.0)
+    """
+    T, V, _ = positions_3d.shape
+    K = np.array(intrinsics["K"], dtype=np.float64)
+
+    # Base rotation: world (right, front, up) → camera (right, down, forward)
+    R_base = np.array([[1,  0,  0],
+                       [0,  0, -1],
+                       [0,  1,  0]], dtype=np.float64)
+
+    # Extra rotation from Euler angles (XYZ intrinsic order)
+    rx, ry, rz = cam_rotation
+    cx, sx = math.cos(rx), math.sin(rx)
+    cy, sy = math.cos(ry), math.sin(ry)
+    cz, sz = math.cos(rz), math.sin(rz)
+    Rx = np.array([[1, 0, 0], [0, cx, -sx], [0, sx, cx]], dtype=np.float64)
+    Ry = np.array([[cy, 0, sy], [0, 1, 0], [-sy, 0, cy]], dtype=np.float64)
+    Rz = np.array([[cz, -sz, 0], [sz, cz, 0], [0, 0, 1]], dtype=np.float64)
+    R = Rz @ Ry @ Rx @ R_base
+
+    t = np.asarray(cam_position, dtype=np.float64)
+
+    # World → camera: translate then rotate  (T, V, 3)
+    pts_cam = (positions_3d.astype(np.float64) - t) @ R.T
+
+    # Perspective divide
+    z = np.clip(pts_cam[:, :, 2:3], 1e-6, None)
+    xy = pts_cam[:, :, :2] / z
+
+    # Intrinsics → pixel coords
+    result = np.empty((T, V, 3), dtype=np.float32)
+    result[:, :, 0] = (K[0, 0] * xy[:, :, 0] + K[0, 2]).astype(np.float32)
+    result[:, :, 1] = (K[1, 1] * xy[:, :, 1] + K[1, 2]).astype(np.float32)
+    result[:, :, 2] = 1.0
+    return result
+
+
 class EmbedRetargDataset(Dataset):
-    def __init__(self, data_path, max_len=243, scale_range=None):
+    def __init__(self, data_path, max_len=243, scale_range=None, project_to_image_params={"cam_position":(0.0,-5.0,1.5), "cam_rotation":(0.0,0.0,0.0), "intrinsics":H36M_INTRINSICS}):
         self.max_len = max_len
         self.scale_range = scale_range
+        self.project_to_image_params = project_to_image_params # do proper reprojection or just use x,z coordinates
+        
         # List all npz files in the data path
         files = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_path)) for f in fn if f.endswith(".npz")]
         files.sort()
@@ -292,10 +375,30 @@ class EmbedRetargDataset(Dataset):
         
         print(data['body_pos_w'].shape) # (T, 22, 3) (xyz -> right, front, up)
         
-        positions = data['body_pos_w']
-        positions = positions[:, :, [0, 2, 1]] # (T, 22, 3) (x, z, y)
-        positions[:, :, 1] = -positions[:, :, 1] # (T, 22, 3) (x, -z, y)
-        positions[:, :, 2] = 1.0 # full confidence
+        if self.project_to_image_params is not None:
+            positions = project_to_image(
+                data['body_pos_w'],
+                self.project_to_image_params['cam_position'],
+                self.project_to_image_params['cam_rotation'],
+                self.project_to_image_params['intrinsics'])
+            
+            # ### DEBUG MATPLOTLIB ###
+            # print(positions.shape)
+            # import matplotlib.pyplot as plt
+            # plt.figure(figsize=(10, 10))
+            # plt.scatter(positions[0, :, 0], positions[0, :, 1])
+            # plt.savefig('debug_positions.png')
+            # exit(0)
+            #########################################################
+            
+            
+        else:
+            positions = data['body_pos_w']
+            positions = positions[:, :, [0, 2, 1]] # (T, 22, 3) (x, z, y)
+            positions[:, :, 1] = -positions[:, :, 1] # (T, 22, 3) (x, -z, y)
+            positions[:, :, 2] = 1.0 # full confidence
+            
+            
         position_h36m_2d = embedretarg2h36m(positions)
         
         if position_h36m_2d.shape[0] > self.max_len:

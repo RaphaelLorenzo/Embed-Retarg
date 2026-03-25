@@ -10,6 +10,7 @@ from torch.utils.data import DataLoader
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+import time
 from lib.utils.tools import *
 from lib.utils.learning import *
 from lib.utils.utils_data import flip_data
@@ -102,16 +103,23 @@ with torch.no_grad():
         files_all.append(file[0])
 
 
-def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
+def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30,
+                      g1_pos=None):
     """
-    Render side-by-side comparison video:
-      Left:   3D original skeleton  (22 joints, axes: right / front / up)
-      Middle: 2D network input      (17 joints, axes: x-right / y-down)
-      Right:  3D network output     (17 joints, axes: right / down / front)
+    Render side-by-side comparison video (3 or 4 panels).
+
+    Panels:
+      1. 3D original skeleton  (22 joints, axes: right / front / up)
+      2. 2D network input      (17 joints, axes: x-right / y-down)
+      3. 3D network output     (17 joints, axes: right / down / front)
+      4. 3D G1 robot skeleton  (38 joints, axes: right / front / up)  [optional]
     """
     T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0])
+    if g1_pos is not None:
+        T = min(T, g1_pos.shape[0])
+    n_panels = 4 if g1_pos is not None else 3
 
-    # --- skeleton topology ---------------------------------------------------
+    # --- skeleton topologies --------------------------------------------------
     er_pairs = [
         [0,1],[0,2],[0,3],[1,4],[2,5],[3,6],[4,7],[5,8],[6,9],
         [7,10],[8,11],[9,12],[12,13],[12,14],[12,15],
@@ -127,7 +135,30 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
     h36m_left  = {(8,11),(11,12),(12,13),(0,4),(4,5),(5,6)}
     h36m_right = {(8,14),(14,15),(15,16),(0,1),(1,2),(2,3)}
 
-    color_l, color_m, color_r = "#02315E", "#00457E", "#2F70AF"
+    # G1 robot 38 joints
+    # 0:pelvis  1-7:left leg  8:pelvis_contour  9-15:right leg
+    # 16-17:waist  18:torso  19:head  20:head_mocap  21:imu_in_torso
+    # 22-29:left arm  30-37:right arm
+    g1_pairs = [
+        [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],
+        [0,9],[9,10],[10,11],[11,12],[12,13],[13,14],[14,15],
+        [0,16],[16,17],[17,18],[18,19],[19,20],
+        [0,8],[18,21],
+        [18,22],[22,23],[23,24],[24,25],[25,26],[26,27],[27,28],[28,29],
+        [18,30],[30,31],[31,32],[32,33],[33,34],[34,35],[35,36],[36,37],
+    ]
+    g1_left = {
+        (0,1),(1,2),(2,3),(3,4),(4,5),(5,6),(6,7),
+        (18,22),(22,23),(23,24),(24,25),(25,26),(26,27),(27,28),(28,29),
+    }
+    g1_right = {
+        (0,9),(9,10),(10,11),(11,12),(12,13),(13,14),(14,15),
+        (18,30),(30,31),(31,32),(32,33),(33,34),(34,35),(35,36),(36,37),
+    }
+
+    color_l = "#FF3333"   # red   – left
+    color_m = "#33CC33"   # green – center
+    color_r = "#4D80FF"   # blue  – right
 
     def limb_color(pair, left_set, right_set):
         tp = tuple(pair)
@@ -151,10 +182,14 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
     out_c, out_r = cube_limits(out_vis)
 
     inp2d = input_pos[:T, :, :2]
+    inp_all = input_pos[:T]
     inp_flat = inp2d.reshape(-1, 2)
     inp_lo, inp_hi = inp_flat.min(0), inp_flat.max(0)
     inp_c = (inp_lo + inp_hi) / 2
     inp_r = max((inp_hi - inp_lo).max() / 2, 0.01) * 1.2
+
+    if g1_pos is not None:
+        g1_c, g1_r = cube_limits(g1_pos[:T])
 
     # --- frame loop -----------------------------------------------------------
     skip_frames = 3
@@ -162,10 +197,10 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
     videowriter = imageio.get_writer(save_path, fps=int(fps/skip_frames))
 
     for f in tqdm(range(0, T, skip_frames), desc="Rendering"):
-        fig = plt.figure(figsize=(18, 6))
+        fig = plt.figure(figsize=(6 * n_panels, 6))
 
-        # ---- left: original 3D (right, front, up) ---------------------------
-        ax1 = fig.add_subplot(1, 3, 1, projection='3d')
+        # ---- panel 1: original 3D (right, front, up) ------------------------
+        ax1 = fig.add_subplot(1, n_panels, 1, projection='3d')
         j = orig_pos[f]
         for p in er_pairs:
             ax1.plot(j[p, 0], j[p, 1], j[p, 2],
@@ -175,10 +210,12 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
         ax1.set_ylim(orig_c[1]-orig_r, orig_c[1]+orig_r)
         ax1.set_zlim(orig_c[2]-orig_r, orig_c[2]+orig_r)
         ax1.view_init(elev=15., azim=-70)
-        ax1.set_title('Original 3D (22j)', fontsize=13)
+        r0 = orig_pos[f, 0]
+        ax1.set_title(f'Original 3D (22j)\nroot=({r0[0]:.2f}, {r0[1]:.2f}, {r0[2]:.2f})',
+                      fontsize=12)
 
-        # ---- middle: input 2D (x-right, y-down) -----------------------------
-        ax2 = fig.add_subplot(1, 3, 2)
+        # ---- panel 2: input 2D (x-right, y-down) ----------------------------
+        ax2 = fig.add_subplot(1, n_panels, 2)
         j2 = inp2d[f]
         for p in h36m_pairs:
             ax2.plot(j2[p, 0], j2[p, 1],
@@ -187,10 +224,12 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
         ax2.set_xlim(inp_c[0]-inp_r, inp_c[0]+inp_r)
         ax2.set_ylim(inp_c[1]+inp_r, inp_c[1]-inp_r)   # flip y so "down" is down
         ax2.set_aspect('equal')
-        ax2.set_title('Input 2D (17j)', fontsize=13)
+        r1 = inp_all[f, 0]
+        ax2.set_title(f'Input 2D (17j)\nroot=({r1[0]:.2f}, {r1[1]:.2f}, conf={r1[2]:.2f})',
+                      fontsize=12)
 
-        # ---- right: output 3D (transformed to -x, -z, -y) -------------------
-        ax3 = fig.add_subplot(1, 3, 3, projection='3d')
+        # ---- panel 3: output 3D (transformed to -x, -z, -y) -----------------
+        ax3 = fig.add_subplot(1, n_panels, 3, projection='3d')
         j3 = out_vis[f]
         for p in h36m_pairs:
             ax3.plot(j3[p, 0], j3[p, 1], j3[p, 2],
@@ -200,7 +239,25 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
         ax3.set_ylim(out_c[1]-out_r, out_c[1]+out_r)
         ax3.set_zlim(out_c[2]-out_r, out_c[2]+out_r)
         ax3.view_init(elev=12., azim=80)
-        ax3.set_title('Output 3D (17j)', fontsize=13)
+        r2 = output_pos[f, 0]
+        ax3.set_title(f'Output 3D (17j)\nroot=({r2[0]:.2f}, {r2[1]:.2f}, {r2[2]:.2f})',
+                      fontsize=12)
+
+        # ---- panel 4: G1 robot 3D (right, front, up) ------------------------
+        if g1_pos is not None:
+            ax4 = fig.add_subplot(1, n_panels, 4, projection='3d')
+            jg = g1_pos[f]
+            for p in g1_pairs:
+                ax4.plot(jg[p, 0], jg[p, 1], jg[p, 2],
+                         color=limb_color(p, g1_left, g1_right),
+                         lw=2, marker='o', mfc='w', ms=2, mew=1)
+            ax4.set_xlim(g1_c[0]-g1_r, g1_c[0]+g1_r)
+            ax4.set_ylim(g1_c[1]-g1_r, g1_c[1]+g1_r)
+            ax4.set_zlim(g1_c[2]-g1_r, g1_c[2]+g1_r)
+            ax4.view_init(elev=15., azim=-70)
+            rg = g1_pos[f, 0]
+            ax4.set_title(f'G1 Robot 3D (38j)\nroot=({rg[0]:.2f}, {rg[1]:.2f}, {rg[2]:.2f})',
+                          fontsize=12)
 
         fig.tight_layout()
         fig.canvas.draw()
@@ -215,26 +272,39 @@ def render_comparison(orig_pos, input_pos, output_pos, save_path, fps=30):
 for file, inp, result in zip(files_all, input_all, results_all):
     print(file)
     outfilename = file.replace(opts.data_path, '')
-    outfilename = outfilename.replace('.npz', '.mp4')
+    timestamp = time.strftime("%Y%m%d_%H%M%S")
+    outfilename = outfilename.replace('.npz', f'{timestamp}.mp4')
     outfilename = outfilename.replace('/', '_')
 
     orig_data = np.load(file)
     orig_pos = orig_data['body_pos_w']          # (T, 22, 3)  right / front / up
 
+    g1_pos = None
+    g1_path = os.path.join(os.path.dirname(file), 'motion_shape_g1.npz')
+    if os.path.exists(g1_path):
+        g1_data = np.load(g1_path)
+        g1_pos = g1_data['body_pos_w']          # (T, 38, 3)  right / front / up
+
     input_pos = inp[0].numpy()                   # (T, 17, 3)  x-right / y-down / conf
     output_pos = result[0]                       # (T, 17, 3)  right / down / front
 
     T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0])
+    if g1_pos is not None:
+        T = min(T, g1_pos.shape[0])
+        g1_pos = g1_pos[:T]
     orig_pos   = orig_pos[:T]
     input_pos  = input_pos[:T]
     output_pos = output_pos[:T]
 
     save_path = os.path.join(opts.out_path, outfilename)
-    render_comparison(orig_pos, input_pos, output_pos, save_path, fps=fps_in)
-    
+    render_comparison(orig_pos, input_pos, output_pos, save_path,
+                      fps=fps_in, g1_pos=g1_pos)
+
     output_npz = {
         'orig_pos': orig_pos,
         'input_pos': input_pos,
         'output_pos': output_pos,
     }
+    if g1_pos is not None:
+        output_npz['g1_pos'] = g1_pos
     np.savez(os.path.join(opts.out_path, outfilename.replace('.mp4', '.npz')), **output_npz)

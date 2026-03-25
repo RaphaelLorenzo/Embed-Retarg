@@ -70,6 +70,7 @@ class SkeletonViewer:
         # output_pos (right, down, front) → (right, front, -down) = (x, y, z-up)
         self.out = out[:T, :, [0, 2, 1]].astype(np.float32).copy()
         self.out[:, :, 2] *= -1
+        # self.out = out[:T].astype(np.float32)
 
         # -- Canvas & grid layout ----------------------------------------------
         self.canvas = scene.SceneCanvas(
@@ -141,6 +142,13 @@ class SkeletonViewer:
                 '[Space] play/pause   [\u2190\u2192] step   [R] reset')
 
     def set_frame(self, f):
+        
+        orig_root_pos = self.orig[self.frame, 0]
+        out_root_pos = self.out[self.frame, 0]
+        
+        print(f"orig_root_pos: ({orig_root_pos[0]:.2f}, {orig_root_pos[1]:.2f}, {orig_root_pos[2]:.2f})")
+        print(f"out_root_pos: ({out_root_pos[0]:.2f}, {out_root_pos[1]:.2f}, {out_root_pos[2]:.2f})")
+        
         self.frame = f % self.T
 
         lp, lc = build_segments(self.orig[self.frame],
