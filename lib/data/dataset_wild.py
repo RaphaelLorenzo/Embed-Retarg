@@ -473,7 +473,7 @@ class EmbedRetargDataset(Dataset):
         print(f"Subset {subset} : Found {len(self.files)} files")            
         
         if subset == "special_walking":
-            invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
+            invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
             self.files = [file for file in self.files if "Walking" in file]
             self.files = self.files[:1]

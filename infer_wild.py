@@ -68,7 +68,15 @@ if opts.wild_dataset:
         # Scale to [-1,1]
         wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, scale_range=[1,1], focus=opts.focus)
 else:
-    wild_dataset = EmbedRetargDataset(opts.data_path, scale_by="sequence", subset="special_walking")
+    wild_dataset = EmbedRetargDataset(opts.data_path, 
+                                    #   data_path=args.data_path,
+                                        max_len=args.clip_len,
+                                        stride=args.data_stride,
+                                        root_rel_target=args.rootrel,
+                                        scale_by=args.scale_by,
+                                        scale_range=args.scale_range,
+                                    #   scale_by="sequence",
+                                        subset="special_walking")
 
 
 test_loader = DataLoader(wild_dataset, **testloader_params)
@@ -85,23 +93,26 @@ with torch.no_grad():
         N, T = batch_input.shape[:2]
         if torch.cuda.is_available():
             batch_input = batch_input.cuda().float()
-        if args.no_conf:
-            batch_input = batch_input[:, :, :, :2]
-        if args.flip:    
-            batch_input_flip = flip_data(batch_input)
-            predicted_3d_pos_1 = model_pos(batch_input)
-            predicted_3d_pos_flip = model_pos(batch_input_flip)
-            predicted_3d_pos_2 = flip_data(predicted_3d_pos_flip) # Flip back
-            predicted_3d_pos = (predicted_3d_pos_1 + predicted_3d_pos_2) / 2.0
-        else:
-            predicted_3d_pos = model_pos(batch_input)
+            
+        # if args.no_conf:
+        #     batch_input = batch_input[:, :, :, :2]
+        # if args.flip:    
+        #     batch_input_flip = flip_data(batch_input)
+        #     predicted_3d_pos_1 = model_pos(batch_input)
+        #     predicted_3d_pos_flip = model_pos(batch_input_flip)
+        #     predicted_3d_pos_2 = flip_data(predicted_3d_pos_flip) # Flip back
+        #     predicted_3d_pos = (predicted_3d_pos_1 + predicted_3d_pos_2) / 2.0
+        # else:
+        
+        predicted_3d_pos = model_pos(batch_input)
         if args.rootrel:
             predicted_3d_pos[:,:,0,:]=0                    # [N,T,17,3]
         else:
             predicted_3d_pos[:,0,0,2]=0
             pass
-        if args.gt_2d:
-            predicted_3d_pos[...,:2] = batch_input[...,:2]
+        # if args.gt_2d:
+        #     predicted_3d_pos[...,:2] = batch_input[...,:2]
+        
         results_all.append(predicted_3d_pos) #.cpu().numpy())
         files_all.append(file[0])
         seq_idx_all.append(seq_idx)
@@ -193,9 +204,14 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
 
     orig_c, orig_r = cube_limits(orig_pos[:T])
 
-    out_vis = np.stack([-output_pos[:T,:,0],
-                        -output_pos[:T,:,2],
-                        -output_pos[:T,:,1]], axis=-1)
+    if "2026" in opts.evaluate:
+        # new output format
+        out_vis = output_pos[:T]
+    else:
+        # old output format
+        out_vis = np.stack([-output_pos[:T,:,0],
+                            -output_pos[:T,:,2],
+                            -output_pos[:T,:,1]], axis=-1)
     out_c, out_r = cube_limits(out_vis)
 
     inp2d = input_pos[:T, :, :2]
@@ -263,56 +279,55 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
         ax3.set_xlim(out_c[0]-out_r, out_c[0]+out_r)
         ax3.set_ylim(out_c[1]-out_r, out_c[1]+out_r)
         ax3.set_zlim(out_c[2]-out_r, out_c[2]+out_r)
-        ax3.view_init(elev=12., azim=80)
+        ax3.view_init(elev=15., azim=-70)
         r2 = output_pos[f, 0]
         ax3.set_title(f'Output 3D (17j)\nroot=({r2[0]:.2f}, {r2[1]:.2f}, {r2[2]:.2f})',
                       fontsize=12)
 
-        # ---- panel 4: G1 robot 3D (right, front, up) ------------------------
-        if g1_pos is not None:
-            ax4 = fig.add_subplot(1, n_panels, 4, projection='3d')
-            jg = g1_pos[f]
-            for p in g1_pairs:
-                ax4.plot(jg[p, 0], jg[p, 1], jg[p, 2],
-                         color=limb_color(p, g1_left, g1_right),
-                         lw=2, marker='o', mfc='w', ms=2, mew=1)
-            ax4.set_xlim(g1_c[0]-g1_r, g1_c[0]+g1_r)
-            ax4.set_ylim(g1_c[1]-g1_r, g1_c[1]+g1_r)
-            ax4.set_zlim(g1_c[2]-g1_r, g1_c[2]+g1_r)
-            ax4.view_init(elev=15., azim=-70)
-            rg = g1_pos[f, 0]
-            t4 = f'G1 Robot 3D (38j)\nroot=({rg[0]:.2f}, {rg[1]:.2f}, {rg[2]:.2f})'
-            if g1_quat is not None:
-                yg, pg, rlg = quat_to_ypr(g1_quat[f, 0])
-                t4 += f'\nypr=({yg:.1f}\u00b0, {pg:.1f}\u00b0, {rlg:.1f}\u00b0)'
-            ax4.set_title(t4, fontsize=11)
+        # ---- panel 4: G1 root-aligned → H36M (17j) --------------------------
+        ax4 = fig.add_subplot(1, n_panels, 4, projection='3d')
+        jh = g1_as_h36m[f]
+        for p in h36m_pairs:
+            ax4.plot(jh[p, 0], jh[p, 1], jh[p, 2],
+                        color=limb_color(p, h36m_left, h36m_right),
+                        lw=2, marker='o', mfc='w', ms=3, mew=1)
+        ax4.set_xlim(g1h_c[0]-g1h_r, g1h_c[0]+g1h_r)
+        ax4.set_ylim(g1h_c[1]-g1h_r, g1h_c[1]+g1h_r)
+        ax4.set_zlim(g1h_c[2]-g1h_r, g1h_c[2]+g1h_r)
+        ax4.view_init(elev=15., azim=-70)
+        ax4.set_title('G1→H36M (17j)\nroot-aligned', fontsize=11)
 
-            # ---- panel 5: G1 root-relative 3D -----------------------------------
-            ax5 = fig.add_subplot(1, n_panels, 5, projection='3d')
-            jrr = target_pos[f]
-            for p in g1_pairs:
-                ax5.plot(jrr[p, 0], jrr[p, 1], jrr[p, 2],
-                         color=limb_color(p, g1_left, g1_right),
-                         lw=2, marker='o', mfc='w', ms=2, mew=1)
-            ax5.set_xlim(g1rr_c[0]-g1rr_r, g1rr_c[0]+g1rr_r)
-            ax5.set_ylim(g1rr_c[1]-g1rr_r, g1rr_c[1]+g1rr_r)
-            ax5.set_zlim(g1rr_c[2]-g1rr_r, g1rr_c[2]+g1rr_r)
-            ax5.view_init(elev=15., azim=-70)
-            t5 = 'G1 Root-Aligned (38j)\nroot=(0, 0, 0) ypr=(0\u00b0, 0\u00b0, 0\u00b0)'
-            ax5.set_title(t5, fontsize=11)
-
-            # ---- panel 6: G1 root-aligned → H36M (17j) --------------------------
-            ax6 = fig.add_subplot(1, n_panels, 6, projection='3d')
-            jh = g1_as_h36m[f]
-            for p in h36m_pairs:
-                ax6.plot(jh[p, 0], jh[p, 1], jh[p, 2],
-                         color=limb_color(p, h36m_left, h36m_right),
-                         lw=2, marker='o', mfc='w', ms=3, mew=1)
-            ax6.set_xlim(g1h_c[0]-g1h_r, g1h_c[0]+g1h_r)
-            ax6.set_ylim(g1h_c[1]-g1h_r, g1h_c[1]+g1h_r)
-            ax6.set_zlim(g1h_c[2]-g1h_r, g1h_c[2]+g1h_r)
-            ax6.view_init(elev=15., azim=-70)
-            ax6.set_title('G1→H36M (17j)\nroot-aligned', fontsize=11)
+        # ---- panel 5: G1 root-relative 3D -----------------------------------
+        ax5 = fig.add_subplot(1, n_panels, 5, projection='3d')
+        jrr = target_pos[f]
+        for p in g1_pairs:
+            ax5.plot(jrr[p, 0], jrr[p, 1], jrr[p, 2],
+                        color=limb_color(p, g1_left, g1_right),
+                        lw=2, marker='o', mfc='w', ms=2, mew=1)
+        ax5.set_xlim(g1rr_c[0]-g1rr_r, g1rr_c[0]+g1rr_r)
+        ax5.set_ylim(g1rr_c[1]-g1rr_r, g1rr_c[1]+g1rr_r)
+        ax5.set_zlim(g1rr_c[2]-g1rr_r, g1rr_c[2]+g1rr_r)
+        ax5.view_init(elev=15., azim=-70)
+        t5 = 'G1 Root-Aligned (38j)\nroot=(0, 0, 0) ypr=(0\u00b0, 0\u00b0, 0\u00b0)'
+        ax5.set_title(t5, fontsize=11)
+                
+        # ---- panel 6: G1 robot 3D (right, front, up) ------------------------
+        ax6 = fig.add_subplot(1, n_panels, 6, projection='3d')
+        jg = g1_pos[f]
+        for p in g1_pairs:
+            ax6.plot(jg[p, 0], jg[p, 1], jg[p, 2],
+                        color=limb_color(p, g1_left, g1_right),
+                        lw=2, marker='o', mfc='w', ms=2, mew=1)
+        ax6.set_xlim(g1_c[0]-g1_r, g1_c[0]+g1_r)
+        ax6.set_ylim(g1_c[1]-g1_r, g1_c[1]+g1_r)
+        ax6.set_zlim(g1_c[2]-g1_r, g1_c[2]+g1_r)
+        ax6.view_init(elev=15., azim=-70)
+        rg = g1_pos[f, 0]
+        t6 = f'G1 Robot 3D (38j)\nroot=({rg[0]:.2f}, {rg[1]:.2f}, {rg[2]:.2f})'
+        if g1_quat is not None:
+            yg, pg, rlg = quat_to_ypr(g1_quat[f, 0])
+            t6 += f'\nypr=({yg:.1f}\u00b0, {pg:.1f}\u00b0, {rlg:.1f}\u00b0)'
+        ax6.set_title(t6, fontsize=11)
 
         fig.tight_layout()
         fig.canvas.draw()
