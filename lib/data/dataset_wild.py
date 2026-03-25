@@ -114,7 +114,75 @@ def coco2h36m(x):
     y[:,15,:] = x[:,8,:]
     y[:,16,:] = x[:,10,:]
     return y
-    
+
+
+def embedretarg2h36m(x):
+    '''
+        Input: x (T, 22, 3)
+        
+        0: 'pelvis'
+        1: 'left_hip'
+        2: 'right_hip'
+        3: 'spine1'
+        4: 'left_knee'
+        5: 'right_knee'
+        6: 'spine2' 
+        7: 'left_ankle'
+        8: 'right_ankle'
+        9: 'spine3'
+        10: 'left_foot'
+        11: 'right_foot'
+        12: 'neck'
+        13: 'left_collar'
+        14: 'right_collar'
+        15: 'head'
+        16: 'left_shoulder'
+        17: 'right_shoulder'
+        18: 'left_elbow'
+        19: 'right_elbow'
+        20: 'left_wrist'
+        21: 'right_wrist'
+        
+        H36M:
+        0: 'root',
+        1: 'rhip',
+        2: 'rkne',
+        3: 'rank',
+        4: 'lhip',
+        5: 'lkne',
+        6: 'lank',
+        7: 'belly',
+        8: 'neck',
+        9: 'nose',
+        10: 'head',
+        11: 'lsho',
+        12: 'lelb',
+        13: 'lwri',
+        14: 'rsho',
+        15: 'relb',
+        16: 'rwri'
+    '''
+    T, V, C = x.shape
+    y = np.zeros([T, 17, C])
+    y[:, 0, :]  = x[:, 0, :]                            # root    ← pelvis
+    y[:, 1, :]  = x[:, 2, :]                            # rhip    ← right_hip
+    y[:, 2, :]  = x[:, 5, :]                            # rkne    ← right_knee
+    y[:, 3, :]  = x[:, 8, :]                            # rank    ← right_ankle
+    y[:, 4, :]  = x[:, 1, :]                            # lhip    ← left_hip
+    y[:, 5, :]  = x[:, 4, :]                            # lkne    ← left_knee
+    y[:, 6, :]  = x[:, 7, :]                            # lank    ← left_ankle
+    y[:, 7, :]  = (x[:, 0, :] + x[:, 12, :]) * 0.5     # belly   ← mid(pelvis, neck)
+    y[:, 8, :]  = x[:, 12, :]                           # neck    ← neck
+    y[:, 9, :]  = (x[:, 12, :] + x[:, 15, :]) * 0.5    # nose    ← mid(neck, head)
+    y[:, 10, :] = x[:, 15, :]                           # head    ← head
+    y[:, 11, :] = x[:, 16, :]                           # lsho    ← left_shoulder
+    y[:, 12, :] = x[:, 18, :]                           # lelb    ← left_elbow
+    y[:, 13, :] = x[:, 20, :]                           # lwri    ← left_wrist
+    y[:, 14, :] = x[:, 17, :]                           # rsho    ← right_shoulder
+    y[:, 15, :] = x[:, 19, :]                           # relb    ← right_elbow
+    y[:, 16, :] = x[:, 21, :]                           # rwri    ← right_wrist
+    return y
+
     
 def read_input(json_path, vid_size, scale_range, focus):
     with open(json_path, "r") as read_file:
@@ -183,3 +251,57 @@ class WildDetDataset(Dataset):
         st = index*self.clip_len
         end = min((index+1)*self.clip_len, len(self.vid_all))
         return self.vid_all[st:end]
+    
+class EmbedRetargDataset(Dataset):
+    def __init__(self, data_path, max_len=243, scale_range=None):
+        self.max_len = max_len
+        self.scale_range = scale_range
+        # List all npz files in the data path
+        files = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_path)) for f in fn if f.endswith(".npz")]
+        files.sort()
+        
+        invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
+        files = [file for file in files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        
+        self.files = files
+        print(f"Found {len(self.files)} files")
+        print(self.files)
+        
+        self.files = [file for file in files if "Walking" in file]
+        self.files = self.files[:1]
+        
+    def __len__(self):
+        'Denotes the total number of samples'
+        return len(self.files)
+    
+    def __getitem__(self, index):
+        'Generates one sample of data'
+        file = self.files[index]
+        data = np.load(file)
+        
+        # print(data.keys()) 
+        # KeysView(NpzFile 
+        # '/home/raphael/Projects/github/accad_subset_random_shapes/Female1General_c3d/A1_-_Stand_stageii/motion_shape.npz' 
+        # with keys: body_link_names, body_pos_w, body_quat_w, betas, fps)
+        
+        # print(data['body_link_names']) 
+        # ['pelvis' 'left_hip' 'right_hip' 'spine1' 'left_knee' 'right_knee'
+        # 'spine2' 'left_ankle' 'right_ankle' 'spine3' 'left_foot' 'right_foot'
+        # 'neck' 'left_collar' 'right_collar' 'head' 'left_shoulder'
+        # 'right_shoulder' 'left_elbow' 'right_elbow' 'left_wrist' 'right_wrist']
+        
+        print(data['body_pos_w'].shape) # (T, 22, 3) (xyz -> right, front, up)
+        
+        positions = data['body_pos_w']
+        positions = positions[:, :, [0, 2, 1]] # (T, 22, 3) (x, z, y)
+        positions[:, :, 1] = -positions[:, :, 1] # (T, 22, 3) (x, -z, y)
+        positions[:, :, 2] = 1.0 # full confidence
+        position_h36m_2d = embedretarg2h36m(positions)
+        
+        if position_h36m_2d.shape[0] > self.max_len:
+            position_h36m_2d = position_h36m_2d[:self.max_len]
+
+        if self.scale_range:
+            position_h36m_2d = crop_scale(position_h36m_2d, self.scale_range) 
+    
+        return position_h36m_2d, file

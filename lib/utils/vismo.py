@@ -11,7 +11,7 @@ from lib.utils.tools import ensure_dir
 import matplotlib
 import matplotlib.pyplot as plt
 from mpl_toolkits.mplot3d import Axes3D
-from lib.utils.utils_smpl import *
+# from lib.utils.utils_smpl import *
 import ipdb
 
 def render_and_save(motion_input, save_path, keep_imgs=False, fps=25, color="#F96706#FB8D43#FDB381", with_conf=False, draw_face=False):
@@ -284,58 +284,58 @@ def motion2video_3d(motion, save_path, fps=25, keep_imgs = False):
         plt.close()
     videowriter.close()
 
-def motion2video_mesh(motion, save_path, fps=25, keep_imgs = False, draw_face=True):
-    videowriter = imageio.get_writer(save_path, fps=fps)
-    vlen = motion.shape[-1]
-    draw_skele = (motion.shape[0]==17)
-    save_name = save_path.split('.')[0]
-    smpl_faces = get_smpl_faces()
-    frames = []
-    joint_pairs = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], [0, 7], [7, 8], [8, 9], [8, 11], [8, 14], [9, 10], [11, 12], [12, 13], [14, 15], [15, 16]]
+# def motion2video_mesh(motion, save_path, fps=25, keep_imgs = False, draw_face=True):
+#     videowriter = imageio.get_writer(save_path, fps=fps)
+#     vlen = motion.shape[-1]
+#     draw_skele = (motion.shape[0]==17)
+#     save_name = save_path.split('.')[0]
+#     smpl_faces = get_smpl_faces()
+#     frames = []
+#     joint_pairs = [[0, 1], [1, 2], [2, 3], [0, 4], [4, 5], [5, 6], [0, 7], [7, 8], [8, 9], [8, 11], [8, 14], [9, 10], [11, 12], [12, 13], [14, 15], [15, 16]]
 
     
-    X, Y, Z = motion[:, 0], motion[:, 1], motion[:, 2]
-    max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
-    mid_x = (X.max()+X.min()) * 0.5
-    mid_y = (Y.max()+Y.min()) * 0.5
-    mid_z = (Z.max()+Z.min()) * 0.5
+#     X, Y, Z = motion[:, 0], motion[:, 1], motion[:, 2]
+#     max_range = np.array([X.max()-X.min(), Y.max()-Y.min(), Z.max()-Z.min()]).max() / 2.0
+#     mid_x = (X.max()+X.min()) * 0.5
+#     mid_y = (Y.max()+Y.min()) * 0.5
+#     mid_z = (Z.max()+Z.min()) * 0.5
     
-    for f in tqdm(range(vlen)):
-        j3d = motion[:,:,f]
-        plt.gca().set_axis_off()
-        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        fig = plt.figure(0, figsize=(8, 8))
-        ax = plt.axes(projection="3d", proj_type = 'ortho')
-        ax.set_xlim(mid_x - max_range, mid_x + max_range)
-        ax.set_ylim(mid_y - max_range, mid_y + max_range)
-        ax.set_zlim(mid_z - max_range, mid_z + max_range)
-        ax.view_init(elev=-90, azim=-90)
-        plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
-        plt.margins(0, 0, 0)
-        plt.gca().xaxis.set_major_locator(plt.NullLocator())
-        plt.gca().yaxis.set_major_locator(plt.NullLocator())
-        plt.axis('off')
-        plt.xticks([])
-        plt.yticks([])
+#     for f in tqdm(range(vlen)):
+#         j3d = motion[:,:,f]
+#         plt.gca().set_axis_off()
+#         plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+#         plt.gca().xaxis.set_major_locator(plt.NullLocator())
+#         plt.gca().yaxis.set_major_locator(plt.NullLocator())
+#         fig = plt.figure(0, figsize=(8, 8))
+#         ax = plt.axes(projection="3d", proj_type = 'ortho')
+#         ax.set_xlim(mid_x - max_range, mid_x + max_range)
+#         ax.set_ylim(mid_y - max_range, mid_y + max_range)
+#         ax.set_zlim(mid_z - max_range, mid_z + max_range)
+#         ax.view_init(elev=-90, azim=-90)
+#         plt.subplots_adjust(top=1, bottom=0, right=1, left=0, hspace=0, wspace=0)
+#         plt.margins(0, 0, 0)
+#         plt.gca().xaxis.set_major_locator(plt.NullLocator())
+#         plt.gca().yaxis.set_major_locator(plt.NullLocator())
+#         plt.axis('off')
+#         plt.xticks([])
+#         plt.yticks([])
         
-        # plt.savefig("filename.png", transparent=True, bbox_inches="tight", pad_inches=0)
+#         # plt.savefig("filename.png", transparent=True, bbox_inches="tight", pad_inches=0)
         
-        if draw_skele:
-            for i in range(len(joint_pairs)):
-                limb = joint_pairs[i]
-                xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
-                ax.plot(-xs, -zs, -ys, c=[0,0,0], lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
-        elif draw_face:
-            ax.plot_trisurf(j3d[:, 0], j3d[:, 1], triangles=smpl_faces, Z=j3d[:, 2], color=(166/255.0,188/255.0,218/255.0,0.9))
-        else:
-            ax.scatter(j3d[:, 0], j3d[:, 1], j3d[:, 2], s=3, c='w', edgecolors='grey')
-        frame_vis = get_img_from_fig(fig, dpi=128)
-        plt.cla()
-        videowriter.append_data(frame_vis)
-        plt.close()
-    videowriter.close()
+#         if draw_skele:
+#             for i in range(len(joint_pairs)):
+#                 limb = joint_pairs[i]
+#                 xs, ys, zs = [np.array([j3d[limb[0], j], j3d[limb[1], j]]) for j in range(3)]
+#                 ax.plot(-xs, -zs, -ys, c=[0,0,0], lw=3, marker='o', markerfacecolor='w', markersize=3, markeredgewidth=2) # axis transformation for visualization
+#         elif draw_face:
+#             ax.plot_trisurf(j3d[:, 0], j3d[:, 1], triangles=smpl_faces, Z=j3d[:, 2], color=(166/255.0,188/255.0,218/255.0,0.9))
+#         else:
+#             ax.scatter(j3d[:, 0], j3d[:, 1], j3d[:, 2], s=3, c='w', edgecolors='grey')
+#         frame_vis = get_img_from_fig(fig, dpi=128)
+#         plt.cla()
+#         videowriter.append_data(frame_vis)
+#         plt.close()
+#     videowriter.close()
 
 def save_image(image_numpy, image_path):
     image_pil = Image.fromarray(image_numpy)

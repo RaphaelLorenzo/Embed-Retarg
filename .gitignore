@@ -1,2 +1,8 @@
 .vscode
 __pycache__
+*.pt
+*.pth
+*.bin
+*.mp4
+*.npy
+*.npz
