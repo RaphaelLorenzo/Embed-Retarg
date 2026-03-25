@@ -186,6 +186,92 @@ def embedretarg2h36m(x):
     y[:, 16, :] = x[:, 21, :]                           # rwri    ← right_wrist
     return y
 
+
+def g12h36m(x):
+    '''
+        Input: x (T, 38, 3)
+        
+        G1:
+        0: 'pelvis'
+        1: 'left_hip_pitch_link'
+        2: 'left_hip_roll_link'
+        3: 'left_hip_yaw_link'
+        4: 'left_knee_link'
+        5: 'left_ankle_pitch_link'
+        6: 'left_ankle_roll_link'
+        7: 'left_toe_link'
+        8: 'pelvis_contour_link'
+        9: 'right_hip_pitch_link'
+        10: 'right_hip_roll_link'
+        11: 'right_hip_yaw_link'
+        12: 'right_knee_link'
+        13: 'right_ankle_pitch_link'
+        14: 'right_ankle_roll_link'
+        15: 'right_toe_link'
+        16: 'waist_yaw_link'
+        17: 'waist_roll_link'
+        18: 'torso_link'
+        19: 'head_link'
+        20: 'head_mocap'
+        21: 'imu_in_torso'
+        22: 'left_shoulder_pitch_link'
+        23: 'left_shoulder_roll_link'
+        24: 'left_shoulder_yaw_link'
+        25: 'left_elbow_link'
+        26: 'left_wrist_roll_link'
+        27: 'left_wrist_pitch_link'
+        28: 'left_wrist_yaw_link'
+        29: 'left_rubber_hand'
+        30: 'right_shoulder_pitch_link'
+        31: 'right_shoulder_roll_link'
+        32: 'right_shoulder_yaw_link'
+        33: 'right_elbow_link'
+        34: 'right_wrist_roll_link'
+        35: 'right_wrist_pitch_link'
+        36: 'right_wrist_yaw_link'
+        37: 'right_rubber_hand'
+ 
+        H36M:
+        0: 'root',
+        1: 'rhip',
+        2: 'rkne',
+        3: 'rank',
+        4: 'lhip',
+        5: 'lkne',
+        6: 'lank',
+        7: 'belly',
+        8: 'neck',
+        9: 'nose',
+        10: 'head',
+        11: 'lsho',
+        12: 'lelb',
+        13: 'lwri',
+        14: 'rsho',
+        15: 'relb',
+        16: 'rwri'
+    '''
+    
+    T, V, C = x.shape
+    y = np.zeros([T, 17, C])
+    y[:, 0, :]  = x[:, 0, :]                              # root  ← pelvis
+    y[:, 1, :]  = x[:, 9, :]                              # rhip  ← right_hip_pitch_link
+    y[:, 2, :]  = x[:, 12, :]                             # rkne  ← right_knee_link
+    y[:, 3, :]  = x[:, 13, :]                             # rank  ← right_ankle_pitch_link
+    y[:, 4, :]  = x[:, 1, :]                              # lhip  ← left_hip_pitch_link
+    y[:, 5, :]  = x[:, 4, :]                              # lkne  ← left_knee_link
+    y[:, 6, :]  = x[:, 5, :]                              # lank  ← left_ankle_pitch_link
+    y[:, 7, :]  = (x[:, 0, :] + x[:, 18, :]) * 0.5       # belly ← mid(pelvis, torso_link)
+    y[:, 8, :]  = x[:, 18, :]                             # neck  ← torso_link
+    y[:, 9, :]  = (x[:, 18, :] + x[:, 19, :]) * 0.5      # nose  ← mid(torso_link, head_link)
+    y[:, 10, :] = x[:, 19, :]                             # head  ← head_link
+    y[:, 11, :] = x[:, 22, :]                             # lsho  ← left_shoulder_pitch_link
+    y[:, 12, :] = x[:, 25, :]                             # lelb  ← left_elbow_link
+    y[:, 13, :] = x[:, 28, :]                             # lwri  ← left_wrist_yaw_link
+    y[:, 14, :] = x[:, 30, :]                             # rsho  ← right_shoulder_pitch_link
+    y[:, 15, :] = x[:, 33, :]                             # relb  ← right_elbow_link
+    y[:, 16, :] = x[:, 36, :]                             # rwri  ← right_wrist_yaw_link
+    return y
+
     
 def read_input(json_path, vid_size, scale_range, focus):
     with open(json_path, "r") as read_file:
@@ -370,8 +456,9 @@ class EmbedRetargDataset(Dataset):
                  scale_by="sequence",
                  scale_range=[1,1], 
                  project_to_image_params={"cam_position":(0.0,-5.0,1.5), "cam_rotation":(0.0,0.0,0.0), "intrinsics":H36M_INTRINSICS},
-                 filter_by_subject=None):
+                 subset="train"):
         
+        self.subset = subset
         self.max_len = max_len
         self.stride = stride
         self.scale_range = scale_range
@@ -382,18 +469,25 @@ class EmbedRetargDataset(Dataset):
         # List all npz files in the data path
         files = [os.path.join(dp, f) for dp, dn, fn in os.walk(os.path.expanduser(data_path)) for f in fn if f.endswith(".npz")]
         files.sort()
-        
-        invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
-        files = [file for file in files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-        
         self.files = files
-        print(f"Found {len(self.files)} files")
-        # print(self.files)
+        print(f"Subset {subset} : Found {len(self.files)} files")            
         
-        self.files = [file for file in files if "Walking" in file]
-        self.files = self.files[:1]
+        if subset == "special_walking":
+            invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+            self.files = [file for file in self.files if "Walking" in file]
+            self.files = self.files[:1]
+        elif subset == "train":
+            invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        elif subset == "test":
+            invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        
+        print(f"Subset {subset} : Kept {len(self.files)} files")            
         
         self.inputs = [] # list of (file, seq_idx, start, end) to mitigate the long sequences
+        rejected_inputs = []
         for file in self.files:
             data = np.load(file)
             body_pos_w = data['body_pos_w']
@@ -401,14 +495,22 @@ class EmbedRetargDataset(Dataset):
             
             if seq_len > self.max_len:
                 for seq_idx,i in enumerate(range(0, seq_len, self.stride)):
-                    self.inputs.append((file, seq_idx, i, min(i + self.max_len, seq_len)))
+                    if i + self.max_len > seq_len:
+                        # too short sequence, skip
+                        rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too short subseq"))
+                        continue
+                    
+                    self.inputs.append((file, seq_idx, i, i + self.max_len))
 
                     # check we can be visible in the reprojection (approximatively)
                     if self.project_to_image_params is not None:
                         cam_position = self.project_to_image_params['cam_position']
                         cam_x = cam_position[0]
                         cam_y = cam_position[1]
-                        assert(np.all(body_pos_w[:, :, 1] > cam_y+1.0)), f"Body is not in front of the camera for file {file}" # always in front of the camera
+                        
+                        if not np.all(body_pos_w[:, :, 1] > cam_y+1.0):
+                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "not in front of the camera"))
+                            continue
                         
                         x_rel = body_pos_w[:, :, 0] - cam_x
                         y_rel = body_pos_w[:, :, 1] - cam_y
@@ -417,11 +519,24 @@ class EmbedRetargDataset(Dataset):
                         
                         # print(x_rel[0], y_rel[0], angles[0])
                         
-                        assert(np.all(angles < 30.0)), f"Body is too far on the left or right of the camera for file {file} : {angles}" # not too far on the left or right of the camera
-                        assert(np.all(angles > -30.0)), f"Body is too far on the left or right of the camera for file {file} : {angles}" # not too far on the left or right of the camera
+                        if not np.all(angles < 30.0):
+                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too far on the left or right of the camera"))
+                            continue
+                        if not np.all(angles > -30.0):
+                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too far on the left or right of the camera"))
+                            continue
                     
-            else:
+            elif seq_len == self.max_len:
                 self.inputs.append((file, 0, 0, seq_len))
+                
+            else:
+                # too short sequence, skip
+                rejected_inputs.append((file, 0, 0, seq_len, "too short seq"))
+                continue
+        
+        print(f"Subset {subset} : Accepted {len(self.inputs)} inputs")
+        print(f"Subset {subset} : Rejected {len(rejected_inputs)} inputs")
+        # print(rejected_inputs)
         
     def __len__(self):
         'Denotes the total number of samples'

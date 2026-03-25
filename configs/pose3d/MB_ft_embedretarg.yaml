@@ -1,0 +1,44 @@
+# General  
+finetune: True
+pretrained_checkpoint: checkpoints/pretrain/latest_epoch.bin
+
+# Traning 
+epochs: 60
+checkpoint_frequency: 30
+batch_size: 2
+dropout: 0.0
+learning_rate: 0.0002
+weight_decay: 0.01
+lr_decay: 0.99
+
+# Model
+maxlen: 243
+dim_feat: 512
+mlp_ratio: 2
+depth: 5
+dim_rep: 512
+num_heads: 8
+att_fuse: True
+num_joints: 17 # original joint numbers in pretrained model
+remap_joints_head: False
+
+# Data
+data_path: /home/raphael/Projects/github/accad_subset_random_shapes
+clip_len: 243
+data_stride: 81
+rootrel: True
+scale_by: "sequence"
+scale_range: [1,1]
+
+# Loss
+lambda_3d_velocity: 0.0
+lambda_scale: 0.0
+lambda_lv: 0.0
+lambda_lg: 0.0
+lambda_a: 0.0
+lambda_av: 0.0
+
+# Augmentation
+mask_ratio: 0.
+mask_T_ratio: 0.
+noise: False

@@ -7,3 +7,4 @@ __pycache__
 *.npy
 *.npz
 *.png
+checkpoints/2026_*

@@ -15,7 +15,7 @@ from lib.utils.tools import *
 from lib.utils.learning import *
 from lib.utils.utils_data import flip_data
 from lib.data.dataset_wild import WildDetDataset
-from lib.data.dataset_wild import EmbedRetargDataset
+from lib.data.dataset_wild import EmbedRetargDataset, g12h36m
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -68,7 +68,7 @@ if opts.wild_dataset:
         # Scale to [-1,1]
         wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, scale_range=[1,1], focus=opts.focus)
 else:
-    wild_dataset = EmbedRetargDataset(opts.data_path, scale_by="sequence")
+    wild_dataset = EmbedRetargDataset(opts.data_path, scale_by="sequence", subset="special_walking")
 
 
 test_loader = DataLoader(wild_dataset, **testloader_params)
@@ -134,7 +134,7 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
     T = min(orig_pos.shape[0], input_pos.shape[0], output_pos.shape[0], target_pos.shape[0])
     if g1_pos is not None:
         T = min(T, g1_pos.shape[0])
-    n_panels = 5 if g1_pos is not None else 3
+    n_panels = 6 if g1_pos is not None else 3
 
     # --- skeleton topologies --------------------------------------------------
     er_pairs = [
@@ -209,6 +209,9 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
         g1_c, g1_r = cube_limits(g1_pos[:T])
     
     g1rr_c, g1rr_r = cube_limits(target_pos[:T])
+
+    g1_as_h36m = g12h36m(target_pos[:T])
+    g1h_c, g1h_r = cube_limits(g1_as_h36m)
 
     # --- frame loop -----------------------------------------------------------
     skip_frames = 3
@@ -297,6 +300,19 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
             ax5.view_init(elev=15., azim=-70)
             t5 = 'G1 Root-Aligned (38j)\nroot=(0, 0, 0) ypr=(0\u00b0, 0\u00b0, 0\u00b0)'
             ax5.set_title(t5, fontsize=11)
+
+            # ---- panel 6: G1 root-aligned → H36M (17j) --------------------------
+            ax6 = fig.add_subplot(1, n_panels, 6, projection='3d')
+            jh = g1_as_h36m[f]
+            for p in h36m_pairs:
+                ax6.plot(jh[p, 0], jh[p, 1], jh[p, 2],
+                         color=limb_color(p, h36m_left, h36m_right),
+                         lw=2, marker='o', mfc='w', ms=3, mew=1)
+            ax6.set_xlim(g1h_c[0]-g1h_r, g1h_c[0]+g1h_r)
+            ax6.set_ylim(g1h_c[1]-g1h_r, g1h_c[1]+g1h_r)
+            ax6.set_zlim(g1h_c[2]-g1h_r, g1h_c[2]+g1h_r)
+            ax6.view_init(elev=15., azim=-70)
+            ax6.set_title('G1→H36M (17j)\nroot-aligned', fontsize=11)
 
         fig.tight_layout()
         fig.canvas.draw()
