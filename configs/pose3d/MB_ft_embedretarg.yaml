@@ -20,7 +20,7 @@ dim_rep: 512
 num_heads: 8
 att_fuse: True
 num_joints: 17 # original joint numbers in pretrained model
-remap_joints_head: False
+remap_joints_head: True
 
 # Data
 data_path: ../accad_subset_random_shapes

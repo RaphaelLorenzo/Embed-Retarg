@@ -8,6 +8,7 @@ from collections import OrderedDict
 from functools import partial
 from itertools import repeat
 from lib.model.drop import DropPath
+import einops
 
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # Cut & paste from PyTorch official master until it's in a few official releases - RW
@@ -270,7 +271,11 @@ class DSTformer(nn.Module):
     def __init__(self, dim_in=3, dim_out=3, dim_feat=256, dim_rep=512,
                  depth=5, num_heads=8, mlp_ratio=4, 
                  num_joints=17, maxlen=243, 
-                 qkv_bias=True, qk_scale=None, drop_rate=0., attn_drop_rate=0., drop_path_rate=0., norm_layer=nn.LayerNorm, att_fuse=True):
+                 qkv_bias=True, qk_scale=None, drop_rate=0., 
+                 attn_drop_rate=0., drop_path_rate=0., 
+                 norm_layer=nn.LayerNorm, att_fuse=True,
+                 num_new_joints=0):
+        
         super().__init__()
         self.dim_out = dim_out
         self.dim_feat = dim_feat
@@ -297,7 +302,7 @@ class DSTformer(nn.Module):
             ]))
         else:
             self.pre_logits = nn.Identity()
-        self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity()            
+        self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity() 
         self.temp_embed = nn.Parameter(torch.zeros(1, maxlen, 1, dim_feat))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_joints, dim_feat))
         trunc_normal_(self.temp_embed, std=.02)
@@ -309,7 +314,12 @@ class DSTformer(nn.Module):
             for i in range(depth):
                 self.ts_attn[i].weight.data.fill_(0)
                 self.ts_attn[i].bias.data.fill_(0.5)
-
+                
+        self.do_map_to_new_joints = num_new_joints > 0
+        # self.map_to_new_joints = nn.Linear(dim_feat*num_joints, dim_feat*num_new_joints) # e.g. 17x512 -> 38x512 (169M params !)
+        self.map_to_new_joints = nn.Linear(num_joints, num_new_joints) if num_new_joints > 0 else None # much lighter
+        
+        
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
@@ -327,19 +337,19 @@ class DSTformer(nn.Module):
         self.head = nn.Linear(self.dim_feat, dim_out) if dim_out > 0 else nn.Identity()
 
     def forward(self, x, return_rep=False):   
-        B, F, J, C = x.shape
+        B, T, J, C = x.shape
         x = x.reshape(-1, J, C)
         BF = x.shape[0]
         x = self.joints_embed(x)
         x = x + self.pos_embed
         _, J, C = x.shape
-        x = x.reshape(-1, F, J, C) + self.temp_embed[:,:F,:,:]
+        x = x.reshape(-1, T, J, C) + self.temp_embed[:,:T,:,:]
         x = x.reshape(BF, J, C)
         x = self.pos_drop(x)
         alphas = []
         for idx, (blk_st, blk_ts) in enumerate(zip(self.blocks_st, self.blocks_ts)):
-            x_st = blk_st(x, F)
-            x_ts = blk_ts(x, F)
+            x_st = blk_st(x, T)
+            x_ts = blk_ts(x, T)
             if self.att_fuse:
                 att = self.ts_attn[idx]
                 alpha = torch.cat([x_st, x_ts], dim=-1)
@@ -350,13 +360,21 @@ class DSTformer(nn.Module):
             else:
                 x = (x_st + x_ts)*0.5
         x = self.norm(x)
-        x = x.reshape(B, F, J, -1)
-        x = self.pre_logits(x)         # [B, F, J, dim_feat]
+        x = x.reshape(B, T, J, -1)
+        x = self.pre_logits(x)         # [B, T, J, dim_feat]
         if return_rep:
             return x
-        x = self.head(x)
-        return x
+        
+        if not self.map_to_new_joints:
+            x = self.head(x) # [B, T, J, dim_out]
+            return x
+        else:
+            x = einops.rearrange(x, 'b t j c -> b t c j') # [B, T, C, J]
+            x = self.map_to_new_joints(x) # [B, T, C, J_new]
+            x = einops.rearrange(x, 'b t c j -> b t j c') # [B, T, J_new, C]
+            x = self.head(x) # [B, T, J, dim_out]
+            return x
 
     def get_representation(self, x):
-        return self.forward(x, return_rep=True)
+        return self.forward(x, return_rep=True) # [B, T, J, dim_feat]
     

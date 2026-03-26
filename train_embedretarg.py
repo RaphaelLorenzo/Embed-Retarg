@@ -281,6 +281,7 @@ def train_with_config(args, opts):
     test_loader = DataLoader(test_dataset, **testloader_params)
     
     min_loss = 100000
+    args.num_new_joints = 38 if args.remap_joints_head else 0
     model_backbone = load_backbone(args)
     model_params = 0
     for parameter in model_backbone.parameters():
