@@ -24,7 +24,7 @@ remap_joints_head: True
 
 # Data
 data_path: ../accad_subset_random_shapes
-clip_len: 243
+clip_len: 81
 data_stride: 81
 rootrel: True
 scale_by: "sequence"
