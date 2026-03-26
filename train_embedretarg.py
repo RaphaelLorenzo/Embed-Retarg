@@ -161,6 +161,8 @@ def train_epoch(args, model_pos, train_loader, train_losses, optimizer, has_gt):
         # Predict 3D poses
         predicted_3d_pos = model_pos(batch_input)    # (N, T, TargetJ, 3)
         
+        # print(predicted_3d_pos.shape, batch_gt.shape)
+        
         optimizer.zero_grad()
         loss_3d_pos = loss_mpjpe(predicted_3d_pos, batch_gt)
         loss_3d_scale = n_mpjpe(predicted_3d_pos, batch_gt)
@@ -297,7 +299,15 @@ def train_with_config(args, opts):
         chk_filename = args.pretrained_checkpoint
         print('Loading checkpoint', chk_filename)
         checkpoint = torch.load(chk_filename, map_location=lambda storage, loc: storage)
-        model_backbone.load_state_dict(checkpoint['model_pos'], strict=True)
+        if args.remap_joints_head:
+            # allow some missing keys because of the new joints
+            missing_keys, unexpected_keys = model_backbone.load_state_dict(checkpoint['model_pos'], strict=False)
+            print('INFO: Missing keys:', missing_keys)
+            assert len(missing_keys) == 2, "We should only have 2 missing keys : 'module.map_to_new_joints.weight', 'module.map_to_new_joints.bias'"
+            print('INFO: Unexpected keys:', unexpected_keys)
+            assert len(unexpected_keys) == 0, "Unexpected keys found in pretrained checkpoint"
+        else:
+            model_backbone.load_state_dict(checkpoint['model_pos'], strict=True)
         model_pos = model_backbone            
     else:
         if opts.resume:
