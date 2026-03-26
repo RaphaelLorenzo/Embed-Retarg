@@ -269,7 +269,8 @@ def train_with_config(args, opts):
                                        root_rel_target=args.rootrel,
                                        scale_by=args.scale_by,
                                        scale_range=args.scale_range,
-                                       subset='train')
+                                       subset='train',
+                                       test_keywords=args.test_keywords)
     
     test_dataset = EmbedRetargDataset(data_path=args.data_path,
                                        max_len=args.clip_len,
@@ -277,7 +278,8 @@ def train_with_config(args, opts):
                                        root_rel_target=args.rootrel,
                                        scale_by=args.scale_by,
                                        scale_range=args.scale_range,
-                                       subset='test')
+                                       subset='test',
+                                       test_keywords=args.test_keywords)
     
     train_loader = DataLoader(train_dataset, **trainloader_params)
     test_loader = DataLoader(test_dataset, **testloader_params)

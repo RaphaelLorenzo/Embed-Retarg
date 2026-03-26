@@ -456,7 +456,8 @@ class EmbedRetargDataset(Dataset):
                  scale_by="sequence",
                  scale_range=[1,1], 
                  project_to_image_params={"cam_position":(0.0,-5.0,1.5), "cam_rotation":(0.0,0.0,0.0), "intrinsics":H36M_INTRINSICS},
-                 subset="train"):
+                 subset="train",
+                 test_keywords=[]):
         
         self.subset = subset
         self.max_len = max_len
@@ -477,12 +478,31 @@ class EmbedRetargDataset(Dataset):
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
             self.files = [file for file in self.files if "Walking" in file]
             self.files = self.files[:1]
-        elif subset == "train":
-            invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
-            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-        elif subset == "test":
+            
+        elif subset == "special_kick":
             invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+            self.files = [file for file in self.files if "Male2MartialArtsKicks" in file]
+            self.files = self.files[:1]
+            
+        elif subset == "train" and len(test_keywords) == 0:
+            invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        elif subset == "test" and len(test_keywords) == 0:
+            invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        
+        elif subset == "train" and len(test_keywords) > 0:
+            invalid_filenames = ["motion_shape_g1.npz"] + test_keywords
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+            
+        elif subset == "test" and len(test_keywords) > 0:
+            invalid_filenames = ["motion_shape_g1.npz"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+            self.files = [file for file in self.files if any(test_keyword in file for test_keyword in test_keywords)]
+                        
+        else:
+            raise ValueError(f"Invalid subset: {subset} and test_keywords: {test_keywords}")
         
         print(f"Subset {subset} : Kept {len(self.files)} files")            
         
