@@ -103,9 +103,9 @@ def g12h36m_torch(x):
     y[:, :, 4, :]  = x[:, :, 1, :]                              # lhip  ← left_hip_pitch_link
     y[:, :, 5, :]  = x[:, :, 4, :]                              # lkne  ← left_knee_link
     y[:, :, 6, :]  = x[:, :, 5, :]                              # lank  ← left_ankle_pitch_link
-    y[:, :, 7, :]  = (x[:, :, 0, :] + x[:, :, 18, :]) * 0.5       # belly ← mid(pelvis, torso_link)
+    y[:, :, 7, :]  = (x[:, :, 0, :] + x[:, :, 18, :]) * 0.5     # belly ← mid(pelvis, torso_link)
     y[:, :, 8, :]  = x[:, :, 18, :]                             # neck  ← torso_link
-    y[:, :, 9, :]  = (x[:, :, 18, :] + x[:, :, 19, :]) * 0.5      # nose  ← mid(torso_link, head_link)
+    y[:, :, 9, :]  = (x[:, :, 18, :] + x[:, :, 19, :]) * 0.5    # nose  ← mid(torso_link, head_link)
     y[:, :, 10, :] = x[:, :, 19, :]                             # head  ← head_link
     y[:, :, 11, :] = x[:, :, 22, :]                             # lsho  ← left_shoulder_pitch_link
     y[:, :, 12, :] = x[:, :, 25, :]                             # lelb  ← left_elbow_link

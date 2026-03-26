@@ -34,6 +34,7 @@ def parse_args():
 opts = parse_args()
 args = get_config(opts.config)
 
+args.num_new_joints = 38 if args.remap_joints_head else 0
 model_backbone = load_backbone(args)
 if torch.cuda.is_available():
     model_backbone = nn.DataParallel(model_backbone)
@@ -272,16 +273,25 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
         # ---- panel 3: output 3D (transformed to -x, -z, -y) -----------------
         ax3 = fig.add_subplot(1, n_panels, 3, projection='3d')
         j3 = out_vis[f]
-        for p in h36m_pairs:
-            ax3.plot(j3[p, 0], j3[p, 1], j3[p, 2],
-                     color=limb_color(p, h36m_left, h36m_right),
-                     lw=2, marker='o', mfc='w', ms=3, mew=1)
+        if out_vis.shape[1] == 17:
+            for p in h36m_pairs:
+                ax3.plot(j3[p, 0], j3[p, 1], j3[p, 2],
+                        color=limb_color(p, h36m_left, h36m_right),
+                        lw=2, marker='o', mfc='w', ms=3, mew=1)
+        elif out_vis.shape[1] == 38:
+            for p in g1_pairs:
+                ax3.plot(j3[p, 0], j3[p, 1], j3[p, 2],
+                        color=limb_color(p, g1_left, g1_right),
+                        lw=2, marker='o', mfc='w', ms=3, mew=1)
+        else:
+            raise ValueError(f"Unexpected number of joints: {out_vis.shape[1]}")
         ax3.set_xlim(out_c[0]-out_r, out_c[0]+out_r)
         ax3.set_ylim(out_c[1]-out_r, out_c[1]+out_r)
         ax3.set_zlim(out_c[2]-out_r, out_c[2]+out_r)
         ax3.view_init(elev=15., azim=-70)
         r2 = output_pos[f, 0]
-        ax3.set_title(f'Output 3D (17j)\nroot=({r2[0]:.2f}, {r2[1]:.2f}, {r2[2]:.2f})',
+        njoints = out_vis.shape[1]
+        ax3.set_title(f'Output 3D ({njoints}j)\nroot=({r2[0]:.2f}, {r2[1]:.2f}, {r2[2]:.2f})',
                       fontsize=12)
 
         # ---- panel 4: G1 root-aligned → H36M (17j) --------------------------
@@ -367,6 +377,7 @@ for file, inp, result, target_pos, seq_idx in zip(files_all, input_all, results_
     g1_pos = g1_data['body_pos_w'][start:end]          # (T, 38, 3)  right / front / up
     g1_quat = g1_data['body_quat_w'][start:end] if g1_pos is not None else None # (T, 38, 4)  w, x, y, z
     g1_quat = g1_quat[:, :, [1, 2, 3, 0]] # (T, 38, 4)  x, y, z, w
+    print(g1_data["body_link_names"])
 
     # render the comparison video
     save_path = os.path.join(opts.out_path, outfilename)

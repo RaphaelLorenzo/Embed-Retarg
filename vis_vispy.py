@@ -33,6 +33,23 @@ H36M_PAIRS = [
 H36M_LEFT  = {(8,11),(11,12),(12,13),(0,4),(4,5),(5,6)}
 H36M_RIGHT = {(8,14),(14,15),(15,16),(0,1),(1,2),(2,3)}
 
+G1_PAIRS = [
+    [0,1],[1,2],[2,3],[3,4],[4,5],[5,6],[6,7],
+    [0,9],[9,10],[10,11],[11,12],[12,13],[13,14],[14,15],
+    [0,16],[16,17],[17,18],[18,19],[19,20],
+    [0,8],[18,21],
+    [18,22],[22,23],[23,24],[24,25],[25,26],[26,27],[27,28],[28,29],
+    [18,30],[30,31],[31,32],[32,33],[33,34],[34,35],[35,36],[36,37],
+]
+G1_LEFT = {
+    (0,1),(1,2),(2,3),(3,4),(4,5),(5,6),(6,7),
+    (18,22),(22,23),(23,24),(24,25),(25,26),(26,27),(27,28),(28,29),
+}
+G1_RIGHT = {
+    (0,9),(9,10),(10,11),(11,12),(12,13),(13,14),(14,15),
+    (18,30),(30,31),(31,32),(32,33),(33,34),(34,35),(35,36),(36,37),
+}
+
 COL_L = np.array([1.0, 0.2, 0.2, 1.0], dtype=np.float32)   # red   – left
 COL_M = np.array([0.2, 0.8, 0.2, 1.0], dtype=np.float32)   # green – center
 COL_R = np.array([0.3, 0.5, 1.0, 1.0], dtype=np.float32)   # blue  – right
@@ -68,9 +85,11 @@ class SkeletonViewer:
         # orig_pos (right, front, up) already matches (x, y, z) – no transform
         self.orig = orig[:T].astype(np.float32)
         # output_pos (right, down, front) → (right, front, -down) = (x, y, z-up)
-        self.out = out[:T, :, [0, 2, 1]].astype(np.float32).copy()
-        self.out[:, :, 2] *= -1
-        # self.out = out[:T].astype(np.float32)
+        if False:
+            self.out = out[:T, :, [0, 2, 1]].astype(np.float32).copy()
+            self.out[:, :, 2] *= -1
+        else:
+            self.out = out[:T].astype(np.float32)
 
         # -- Canvas & grid layout ----------------------------------------------
         self.canvas = scene.SceneCanvas(
@@ -123,7 +142,12 @@ class SkeletonViewer:
         self.mark_l.set_data(self.orig[0], face_color='white',
                              edge_color=COL_M, size=8, edge_width=2)
 
-        rp, rc = build_segments(self.out[0], H36M_PAIRS, H36M_LEFT, H36M_RIGHT)
+        if self.out.shape[1] == 17:
+            rp, rc = build_segments(self.out[0], H36M_PAIRS, H36M_LEFT, H36M_RIGHT)
+        elif self.out.shape[1] == 38:
+            rp, rc = build_segments(self.out[0], G1_PAIRS, G1_LEFT, G1_RIGHT)
+        else:
+            raise ValueError(f"Unexpected number of joints: {self.out.shape[1]}")
         self.line_r = scene.visuals.Line(
             pos=rp, color=rc, connect='segments', width=3,
             parent=self.view_r.scene)
@@ -157,8 +181,14 @@ class SkeletonViewer:
         self.mark_l.set_data(self.orig[self.frame], face_color='white',
                              edge_color=COL_M, size=8, edge_width=2)
 
-        rp, rc = build_segments(self.out[self.frame],
-                                H36M_PAIRS, H36M_LEFT, H36M_RIGHT)
+        if self.out.shape[1] == 17:
+            rp, rc = build_segments(self.out[self.frame],
+                                    H36M_PAIRS, H36M_LEFT, H36M_RIGHT)
+        elif self.out.shape[1] == 38:
+            rp, rc = build_segments(self.out[self.frame], G1_PAIRS, G1_LEFT, G1_RIGHT)
+        else:
+            raise ValueError(f"Unexpected number of joints: {self.out.shape[1]}")
+        
         self.line_r.set_data(pos=rp, color=rc)
         self.mark_r.set_data(self.out[self.frame], face_color='white',
                              edge_color=COL_M, size=8, edge_width=2)
