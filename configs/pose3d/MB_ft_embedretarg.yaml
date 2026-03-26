@@ -29,7 +29,7 @@ data_stride: 81
 rootrel: True
 scale_by: "sequence"
 scale_range: [1,1]
-test_keywords: ["Male2MartialArtsKicks"]
+test_keywords: ["MartialArtsStances_c3d"]
 
 # Loss
 lambda_3d_velocity: 0.0

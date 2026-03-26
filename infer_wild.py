@@ -27,6 +27,7 @@ def parse_args():
     parser.add_argument('--pixel', action='store_true', help='align with pixle coordinates')
     parser.add_argument('--focus', type=int, default=None, help='target person id')
     parser.add_argument('--clip_len', type=int, default=243, help='clip length for network input')
+    parser.add_argument('--subset', type=str, default='special_walking', help='subset to use')
     parser.add_argument('--wild_dataset', "-wd", action='store_true', help='use wild dataset')
     opts = parser.parse_args()
     return opts
@@ -70,14 +71,12 @@ if opts.wild_dataset:
         wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, scale_range=[1,1], focus=opts.focus)
 else:
     wild_dataset = EmbedRetargDataset(opts.data_path, 
-                                    #   data_path=args.data_path,
-                                        max_len=args.clip_len,
+                                        max_len=opts.clip_len,
                                         stride=args.data_stride,
                                         root_rel_target=args.rootrel,
                                         scale_by=args.scale_by,
                                         scale_range=args.scale_range,
-                                    #   scale_by="sequence",
-                                        subset="special_walking")
+                                        subset=opts.subset)
 
 
 test_loader = DataLoader(wild_dataset, **testloader_params)
@@ -365,7 +364,7 @@ for file, inp, result, target_pos, seq_idx in zip(files_all, input_all, results_
     # data from the original file
     orig_data = np.load(file)
     start = seq_idx * 81
-    end = start + 243
+    end = start + opts.clip_len
     orig_pos = orig_data['body_pos_w'][start:end]          # (T, 22, 3)  right / front / up
     orig_quat = orig_data['body_quat_w'][start:end]      # (T, 22, 4)  x, y, z, w
     orig_quat = orig_quat[:, :, [1, 2, 3, 0]] # (T, 22, 4)  x, y, z, w

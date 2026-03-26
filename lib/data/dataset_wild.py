@@ -479,10 +479,10 @@ class EmbedRetargDataset(Dataset):
             self.files = [file for file in self.files if "Walking" in file]
             self.files = self.files[:1]
             
-        elif subset == "special_kick":
+        elif subset == "special_stances":
             invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-            self.files = [file for file in self.files if "Male2MartialArtsKicks" in file]
+            self.files = [file for file in self.files if "MartialArtsStances_c3d" in file]
             self.files = self.files[:1]
             
         elif subset == "train" and len(test_keywords) == 0:
