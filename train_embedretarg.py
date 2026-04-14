@@ -16,104 +16,13 @@ import shutil
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-
-
 from datetime import datetime
 from lib.utils.tools import *
 from lib.utils.learning import *
-# from lib.utils.utils_data import flip_data
-# from lib.data.dataset_motion_2d import PoseTrackDataset2D, InstaVDataset2D
-# from lib.data.dataset_motion_3d import MotionDataset3D
-from lib.data.dataset_wild import EmbedRetargDataset
+from lib.data.dataset_embedretarg import EmbedRetargDataset
 from lib.data.augmentation import Augmenter2D
-# from lib.data.datareader_h36m import DataReaderH36M  
 from lib.model.loss import *
-
-
-def g12h36m_torch(x):
-    '''
-        Input: x (B, T, 38, 3)
-        
-        G1:
-        0: 'pelvis'
-        1: 'left_hip_pitch_link'
-        2: 'left_hip_roll_link'
-        3: 'left_hip_yaw_link'
-        4: 'left_knee_link'
-        5: 'left_ankle_pitch_link'
-        6: 'left_ankle_roll_link'
-        7: 'left_toe_link'
-        8: 'pelvis_contour_link'
-        9: 'right_hip_pitch_link'
-        10: 'right_hip_roll_link'
-        11: 'right_hip_yaw_link'
-        12: 'right_knee_link'
-        13: 'right_ankle_pitch_link'
-        14: 'right_ankle_roll_link'
-        15: 'right_toe_link'
-        16: 'waist_yaw_link'
-        17: 'waist_roll_link'
-        18: 'torso_link'
-        19: 'head_link'
-        20: 'head_mocap'
-        21: 'imu_in_torso'
-        22: 'left_shoulder_pitch_link'
-        23: 'left_shoulder_roll_link'
-        24: 'left_shoulder_yaw_link'
-        25: 'left_elbow_link'
-        26: 'left_wrist_roll_link'
-        27: 'left_wrist_pitch_link'
-        28: 'left_wrist_yaw_link'
-        29: 'left_rubber_hand'
-        30: 'right_shoulder_pitch_link'
-        31: 'right_shoulder_roll_link'
-        32: 'right_shoulder_yaw_link'
-        33: 'right_elbow_link'
-        34: 'right_wrist_roll_link'
-        35: 'right_wrist_pitch_link'
-        36: 'right_wrist_yaw_link'
-        37: 'right_rubber_hand'
- 
-        H36M:
-        0: 'root',
-        1: 'rhip',
-        2: 'rkne',
-        3: 'rank',
-        4: 'lhip',
-        5: 'lkne',
-        6: 'lank',
-        7: 'belly',
-        8: 'neck',
-        9: 'nose',
-        10: 'head',
-        11: 'lsho',
-        12: 'lelb',
-        13: 'lwri',
-        14: 'rsho',
-        15: 'relb',
-        16: 'rwri'
-    '''
-    
-    B, T, V, C = x.shape
-    y = torch.zeros([B, T, 17, C], device=x.device, dtype=x.dtype)
-    y[:, :, 0, :]  = x[:, :, 0, :]                              # root  ← pelvis
-    y[:, :, 1, :]  = x[:, :, 9, :]                              # rhip  ← right_hip_pitch_link
-    y[:, :, 2, :]  = x[:, :, 12, :]                             # rkne  ← right_knee_link
-    y[:, :, 3, :]  = x[:, :, 13, :]                             # rank  ← right_ankle_pitch_link
-    y[:, :, 4, :]  = x[:, :, 1, :]                              # lhip  ← left_hip_pitch_link
-    y[:, :, 5, :]  = x[:, :, 4, :]                              # lkne  ← left_knee_link
-    y[:, :, 6, :]  = x[:, :, 5, :]                              # lank  ← left_ankle_pitch_link
-    y[:, :, 7, :]  = (x[:, :, 0, :] + x[:, :, 18, :]) * 0.5     # belly ← mid(pelvis, torso_link)
-    y[:, :, 8, :]  = x[:, :, 18, :]                             # neck  ← torso_link
-    y[:, :, 9, :]  = (x[:, :, 18, :] + x[:, :, 19, :]) * 0.5    # nose  ← mid(torso_link, head_link)
-    y[:, :, 10, :] = x[:, :, 19, :]                             # head  ← head_link
-    y[:, :, 11, :] = x[:, :, 22, :]                             # lsho  ← left_shoulder_pitch_link
-    y[:, :, 12, :] = x[:, :, 25, :]                             # lelb  ← left_elbow_link
-    y[:, :, 13, :] = x[:, :, 28, :]                             # lwri  ← left_wrist_yaw_link
-    y[:, :, 14, :] = x[:, :, 30, :]                             # rsho  ← right_shoulder_pitch_link
-    y[:, :, 15, :] = x[:, :, 33, :]                             # relb  ← right_elbow_link
-    y[:, :, 16, :] = x[:, :, 36, :]                             # rwri  ← right_wrist_yaw_link
-    return y
+from tools.conversion_tools import g12h36m_torch
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -234,7 +143,21 @@ def test_epoch(args, model_pos, test_loader, test_losses):
 
 
 def train_with_config(args, opts):
-    print(args)
+    
+    # print config in a readable format
+    for key, value in args.items(): 
+        if type(value) == list:
+            print(f"{key}:")
+            for item in value:
+                print(f"  - {item}")
+        elif type(value) == dict:
+            print(f"{key}:")
+            for key, value in value.items():
+                print(f"  {key}: {value}")
+        else:
+            print(f"{key}: {value}")
+    
+    # create checkpoint directory
     try:
         os.makedirs(opts.checkpoint)
         # copy config file to checkpoint directory
@@ -244,6 +167,7 @@ def train_with_config(args, opts):
             raise RuntimeError('Unable to create checkpoint directory:', opts.checkpoint)
 
 
+    # load dataset
     print('Loading dataset...')
     trainloader_params = {
           'batch_size': args.batch_size,
@@ -281,9 +205,11 @@ def train_with_config(args, opts):
                                        subset='test',
                                        test_keywords=args.test_keywords)
     
+    # create data loaders
     train_loader = DataLoader(train_dataset, **trainloader_params)
     test_loader = DataLoader(test_dataset, **testloader_params)
     
+    # load modeL and setup for learning
     min_loss = 100000
     args.num_new_joints = 38 if args.remap_joints_head else 0
     model_backbone = load_backbone(args)
@@ -296,6 +222,7 @@ def train_with_config(args, opts):
         model_backbone = nn.DataParallel(model_backbone)
         model_backbone = model_backbone.cuda()
 
+    # load pretrained checkpoint (or start from scratch)
     if args.finetune:
         print("Finetuning from pretrained checkpoint...")
         chk_filename = args.pretrained_checkpoint
@@ -323,6 +250,7 @@ def train_with_config(args, opts):
             print("Starting training from scratch...")
             model_pos = model_backbone
 
+    # setup optimizer
     lr = args.learning_rate
     optimizer = optim.AdamW(filter(lambda p: p.requires_grad, model_pos.parameters()), lr=lr, weight_decay=args.weight_decay)
     lr_decay = args.lr_decay
@@ -337,14 +265,15 @@ def train_with_config(args, opts):
         lr = checkpoint['lr']
         if 'min_loss' in checkpoint and checkpoint['min_loss'] is not None:
             min_loss = checkpoint['min_loss']
-            
+    
+    # setup augmentation parameters
     args.mask = (args.mask_ratio > 0 and args.mask_T_ratio > 0)
     if args.mask or args.noise:
         args.aug = Augmenter2D(args)
     
-    # Training
+    # Training loop
     for epoch in range(st, args.epochs):
-        print('Training epoch %d.' % epoch)
+        print('Training epoch %d/%d.' % (epoch, args.epochs))
         start_time = time()
         train_losses = {}
         train_losses['3d_pos'] = AverageMeter()

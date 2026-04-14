@@ -14,8 +14,9 @@ import time
 from lib.utils.tools import *
 from lib.utils.learning import *
 from lib.utils.utils_data import flip_data
-from lib.data.dataset_wild import WildDetDataset
-from lib.data.dataset_wild import EmbedRetargDataset, g12h36m
+# from lib.data.dataset_wild import WildDetDataset
+from lib.data.dataset_embedretarg import EmbedRetargDataset
+from tools.conversion_tools import g12h36m
 
 def parse_args():
     parser = argparse.ArgumentParser()
@@ -28,7 +29,6 @@ def parse_args():
     parser.add_argument('--focus', type=int, default=None, help='target person id')
     parser.add_argument('--clip_len', type=int, default=243, help='clip length for network input')
     parser.add_argument('--subset', type=str, default='special_walking', help='subset to use')
-    parser.add_argument('--wild_dataset', "-wd", action='store_true', help='use wild dataset')
     opts = parser.parse_args()
     return opts
 
@@ -58,28 +58,16 @@ testloader_params = {
 
 os.makedirs(opts.out_path, exist_ok=True)
 
-fps_in = 30
-if opts.wild_dataset:
-    if opts.pixel:
-        vid = imageio.get_reader(opts.vid_path,  'ffmpeg')
-        fps_in = vid.get_meta_data()['fps']
-        vid_size = vid.get_meta_data()['size']
-        # Keep relative scale with pixel coornidates
-        wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, vid_size=vid_size, scale_range=None, focus=opts.focus)
-    else:
-        # Scale to [-1,1]
-        wild_dataset = WildDetDataset(opts.data_path, clip_len=opts.clip_len, scale_range=[1,1], focus=opts.focus)
-else:
-    wild_dataset = EmbedRetargDataset(opts.data_path, 
-                                        max_len=opts.clip_len,
-                                        stride=args.data_stride,
-                                        root_rel_target=args.rootrel,
-                                        scale_by=args.scale_by,
-                                        scale_range=args.scale_range,
-                                        subset=opts.subset)
+dataset = EmbedRetargDataset(opts.data_path, 
+                            max_len=opts.clip_len,
+                            stride=args.data_stride,
+                            root_rel_target=args.rootrel,
+                            scale_by=args.scale_by,
+                            scale_range=args.scale_range,
+                            subset=opts.subset)
 
 
-test_loader = DataLoader(wild_dataset, **testloader_params)
+test_loader = DataLoader(dataset, **testloader_params)
 
 results_all = []
 input_all = []
@@ -379,6 +367,7 @@ for file, inp, result, target_pos, seq_idx in zip(files_all, input_all, results_
     print(g1_data["body_link_names"])
 
     # render the comparison video
+    fps_in = 30
     save_path = os.path.join(opts.out_path, outfilename)
     render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path,
                       fps=fps_in, g1_pos=g1_pos,
