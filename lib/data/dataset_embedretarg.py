@@ -146,18 +146,19 @@ class EmbedRetargDataset(Dataset):
         self.files = files
         print(f"Subset {subset} : Found {len(self.files)} files")            
         
-        if subset == "special_walking":
+        if subset.startswith("sp_"):
             invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
+            sp_name_split = subset.split("_")
+            assert len(sp_name_split) == 3, "Special subset must be of the form sp_XXX_N"
+            sp_name = sp_name_split[1]
+            sp_number = int(sp_name_split[2])
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-            self.files = [file for file in self.files if "Walking" in file]
-            self.files = self.files[:1]
+            self.files = [file for file in self.files if sp_name in file]            
+            sp_number = min(sp_number, len(self.files))
+            print(f"Subset {sp_name} : Kept {sp_number} files (requested {subset})")
+            self.files = self.files[:sp_number]
             
-        elif subset == "special_stances":
-            invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
-            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-            self.files = [file for file in self.files if "MartialArtsStances_c3d" in file]
-            self.files = self.files[:1]
-            
+        # case of train/test split by using motion_shape_XXX.npz for tests and random_shape_XXX.npz for train
         elif subset == "train" and len(test_keywords) == 0:
             invalid_filenames = ["motion_shape_g1.npz", "motion_shape.npz"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
@@ -165,10 +166,10 @@ class EmbedRetargDataset(Dataset):
             invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
         
+        # case of train/test split by using test_keywords for tests
         elif subset == "train" and len(test_keywords) > 0:
             invalid_filenames = ["motion_shape_g1.npz"] + test_keywords
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
-            
         elif subset == "test" and len(test_keywords) > 0:
             invalid_filenames = ["motion_shape_g1.npz"]
             self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
