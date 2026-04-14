@@ -123,7 +123,7 @@ H36M_INTRINSICS = {
 class EmbedRetargDataset(Dataset):
     def __init__(self, 
                  data_path, 
-                 max_len=243, 
+                 clip_len=243, 
                  stride=81, 
                  root_rel_target=True,
                  scale_by="sequence",
@@ -133,7 +133,7 @@ class EmbedRetargDataset(Dataset):
                  test_keywords=[]):
         
         self.subset = subset
-        self.max_len = max_len
+        self.clip_len = clip_len
         self.stride = stride
         self.scale_range = scale_range
         self.project_to_image_params = project_to_image_params # do proper reprojection or just use x,z coordinates
@@ -186,14 +186,14 @@ class EmbedRetargDataset(Dataset):
             body_pos_w = data['body_pos_w']
             seq_len = body_pos_w.shape[0]
             
-            if seq_len > self.max_len:
+            if seq_len > self.clip_len:
                 for seq_idx,i in enumerate(range(0, seq_len, self.stride)):
-                    if i + self.max_len > seq_len:
+                    if i + self.clip_len > seq_len:
                         # too short sequence, skip
-                        rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too short subseq"))
+                        rejected_inputs.append((file, seq_idx, i, i + self.clip_len, "too short subseq"))
                         continue
                     
-                    self.inputs.append((file, seq_idx, i, i + self.max_len))
+                    self.inputs.append((file, seq_idx, i, i + self.clip_len))
 
                     # check we can be visible in the reprojection (approximatively)
                     if self.project_to_image_params is not None:
@@ -202,7 +202,7 @@ class EmbedRetargDataset(Dataset):
                         cam_y = cam_position[1]
                         
                         if not np.all(body_pos_w[:, :, 1] > cam_y+1.0):
-                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "not in front of the camera"))
+                            rejected_inputs.append((file, seq_idx, i, i + self.clip_len, "not in front of the camera"))
                             continue
                         
                         x_rel = body_pos_w[:, :, 0] - cam_x
@@ -213,13 +213,13 @@ class EmbedRetargDataset(Dataset):
                         # print(x_rel[0], y_rel[0], angles[0])
                         
                         if not np.all(angles < 30.0):
-                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too far on the left or right of the camera"))
+                            rejected_inputs.append((file, seq_idx, i, i + self.clip_len, "too far on the left or right of the camera"))
                             continue
                         if not np.all(angles > -30.0):
-                            rejected_inputs.append((file, seq_idx, i, i + self.max_len, "too far on the left or right of the camera"))
+                            rejected_inputs.append((file, seq_idx, i, i + self.clip_len, "too far on the left or right of the camera"))
                             continue
                     
-            elif seq_len == self.max_len:
+            elif seq_len == self.clip_len:
                 self.inputs.append((file, 0, 0, seq_len))
                 
             else:

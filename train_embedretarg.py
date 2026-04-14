@@ -188,7 +188,7 @@ def train_with_config(args, opts):
     }
 
     train_dataset = EmbedRetargDataset(data_path=args.data_path,
-                                       max_len=args.clip_len,
+                                       clip_len=args.clip_len,
                                        stride=args.data_stride,
                                        root_rel_target=args.rootrel,
                                        scale_by=args.scale_by,
@@ -197,7 +197,7 @@ def train_with_config(args, opts):
                                        test_keywords=args.test_keywords)
     
     test_dataset = EmbedRetargDataset(data_path=args.data_path,
-                                       max_len=args.clip_len,
+                                       clip_len=args.clip_len,
                                        stride=args.data_stride,
                                        root_rel_target=args.rootrel,
                                        scale_by=args.scale_by,

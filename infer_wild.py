@@ -59,7 +59,7 @@ testloader_params = {
 os.makedirs(opts.out_path, exist_ok=True)
 
 dataset = EmbedRetargDataset(opts.data_path, 
-                            max_len=opts.clip_len,
+                            clip_len=opts.clip_len,
                             stride=args.data_stride,
                             root_rel_target=args.rootrel,
                             scale_by=args.scale_by,
