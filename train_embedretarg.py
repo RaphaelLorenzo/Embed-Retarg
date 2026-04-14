@@ -229,14 +229,19 @@ def train_with_config(args, opts):
         print('Loading checkpoint', chk_filename)
         checkpoint = torch.load(chk_filename, map_location=lambda storage, loc: storage)
         if args.remap_joints_head:
-            # allow some missing keys because of the new joints
+            # allow some missing keys because of the new joints and reduced head and reduce dim
             missing_keys, unexpected_keys = model_backbone.load_state_dict(checkpoint['model_pos'], strict=False)
             print('INFO: Missing keys:', missing_keys)
-            assert len(missing_keys) == 2, "We should only have 2 missing keys : 'module.map_to_new_joints.weight', 'module.map_to_new_joints.bias'"
+            assert len(missing_keys) == 6, "We should only have 6 missing keys : 'module.map_to_new_joints.weight', 'module.map_to_new_joints.bias', 'module.reduce_dim.weight', 'module.reduce_dim.bias', 'module.reduced_head.weight', 'module.reduced_head.bias'"
             print('INFO: Unexpected keys:', unexpected_keys)
-            assert len(unexpected_keys) == 0, "Unexpected keys found in pretrained checkpoint"
+            assert len(unexpected_keys) == 2, "Unexpected keys found in pretrained checkpoint, we should only have two for the old head : 'module.head.weight', 'module.head.bias'"
         else:
-            model_backbone.load_state_dict(checkpoint['model_pos'], strict=True)
+            # allow some missing keys because of  reduced head and reduce dim
+            missing_keys, unexpected_keys = model_backbone.load_state_dict(checkpoint['model_pos'], strict=False)
+            print('INFO: Missing keys:', missing_keys)
+            assert len(missing_keys) == 4, "We should only have 4 missing keys : 'module.reduce_dim.weight', 'module.reduce_dim.bias', 'module.reduced_head.weight', 'module.reduced_head.bias'"
+            print('INFO: Unexpected keys:', unexpected_keys)
+            assert len(unexpected_keys) == 2, "Unexpected keys found in pretrained checkpoint, we should only have two for the old head : 'module.head.weight', 'module.head.bias'"        
         model_pos = model_backbone            
     else:
         if opts.resume:

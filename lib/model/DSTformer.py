@@ -279,6 +279,7 @@ class DSTformer(nn.Module):
         super().__init__()
         self.dim_out = dim_out
         self.dim_feat = dim_feat
+        self.dim_reduced = dim_rep // 8
         self.joints_embed = nn.Linear(dim_in, dim_feat)
         self.pos_drop = nn.Dropout(p=drop_rate)
         dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
@@ -302,7 +303,7 @@ class DSTformer(nn.Module):
             ]))
         else:
             self.pre_logits = nn.Identity()
-        self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity() 
+        # self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity() 
         self.temp_embed = nn.Parameter(torch.zeros(1, maxlen, 1, dim_feat))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_joints, dim_feat))
         trunc_normal_(self.temp_embed, std=.02)
@@ -318,6 +319,9 @@ class DSTformer(nn.Module):
         self.do_map_to_new_joints = num_new_joints > 0
         # self.map_to_new_joints = nn.Linear(dim_feat*num_joints, dim_feat*num_new_joints) # e.g. 17x512 -> 38x512 (169M params !)
         self.map_to_new_joints = nn.Linear(num_joints, num_new_joints) if num_new_joints > 0 else None # much lighter
+        
+        self.reduce_dim = nn.Linear(dim_rep, dim_rep//8)
+        self.reduced_head = nn.Linear(dim_rep//8, dim_out) if dim_out > 0 else nn.Identity()
         
         
     def _init_weights(self, m):
@@ -366,13 +370,15 @@ class DSTformer(nn.Module):
             return x
         
         if not self.map_to_new_joints:
-            x = self.head(x) # [B, T, J, dim_out]
+            x = self.reduce_dim(x)
+            x = self.reduced_head(x) # [B, T, J, dim_out]
             return x
         else:
             x = einops.rearrange(x, 'b t j c -> b t c j') # [B, T, C, J]
             x = self.map_to_new_joints(x) # [B, T, C, J_new]
             x = einops.rearrange(x, 'b t c j -> b t j c') # [B, T, J_new, C]
-            x = self.head(x) # [B, T, J, dim_out]
+            x = self.reduce_dim(x)
+            x = self.reduced_head(x) # [B, T, J, dim_out]
             return x
 
     def get_representation(self, x):
