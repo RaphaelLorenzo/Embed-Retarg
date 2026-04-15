@@ -397,8 +397,8 @@ class DSTformer(nn.Module):
             x = self.reduced_head(x) # [B, T, J, dim_out]
             return x
 
-    def get_full_features(self, x):
+    def get_full_features(self, x) -> torch.Tensor:
         return self.forward(x, return_rep="full") # [B, T, J, dim_rep]
     
-    def get_reduced_features(self, x):
+    def get_reduced_features(self, x) -> torch.Tensor:
         return self.forward(x, return_rep="reduced") # [B, T, J, dim_rep//8]

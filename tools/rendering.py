@@ -8,11 +8,30 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from tqdm import tqdm
 from scipy.spatial.transform import Rotation as R_scipy
+import os
 
 def quat_to_ypr(q):
     """Quaternion (x, y, z, w) → (yaw, pitch, roll) in degrees."""
     yaw, pitch, roll = R_scipy.from_quat(q).as_euler('ZYX', degrees=True)
     return yaw, pitch, roll
+
+def load_original_pose_and_g1_data_from_file(file):
+    # data from the original file
+    orig_data = np.load(file)
+    orig_pos = orig_data['body_pos_w']         # (T, 22, 3)  right / front / up
+    orig_quat = orig_data['body_quat_w']      # (T, 22, 4)  x, y, z, w
+    orig_quat = orig_quat[:, :, [1, 2, 3, 0]] # (T, 22, 4)  x, y, z, w
+    
+    # data from the G1 robot file
+    g1_path = os.path.join(os.path.dirname(file), 'motion_shape_g1.npz')
+    assert os.path.exists(g1_path), f"G1 data not found at {g1_path}"
+    g1_data = np.load(g1_path)
+    g1_pos = g1_data['body_pos_w']  # (T, 38, 3)  right / front / up
+    g1_quat = g1_data['body_quat_w'] # (T, 38, 4)  w, x, y, z
+    g1_quat = g1_quat[:, :, [1, 2, 3, 0]] # (T, 38, 4)  x, y, z, w
+    # print(g1_data["body_link_names"])
+    
+    return orig_pos, orig_quat, g1_pos, g1_quat
 
 def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fps=30,
                       g1_pos=None, orig_quat=None, g1_quat=None):
@@ -247,4 +266,4 @@ def render_comparison(orig_pos, input_pos, output_pos, target_pos, save_path, fp
         plt.close(fig)
 
     videowriter.close()
-    print(f"Saved comparison video → {save_path}")
+    # print(f"Saved comparison video → {save_path}")
