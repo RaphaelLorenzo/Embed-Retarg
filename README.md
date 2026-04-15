@@ -18,7 +18,7 @@ TODO / Things may be misisng, so make sure everyhting is `requirements.txt`
 
 ## Get models
 
-Download the models and put them in `checkpoints` (see the tree directory below) : XXX
+Download the models and put them in `checkpoints` (see the tree directory below) : https://filesender.renater.fr/?s=download&token=13c8f9a9-ea63-48f6-9db8-d6f29a1913c1
 
 ## Overall behavior
 1. Pretrained MotionBERT
@@ -76,13 +76,13 @@ It will train from pretrained MotionBERT checkpoint with the specified config an
 .
 ├── checkpoints
 │   ├── mb_retarg_compress_17
+│   │   ├── latest_epoch.bin
+│   │   └── config.yaml
+│   ├── mb_retarg_compress_38
 │   │   ├── config.yaml
 │   │   └── latest_epoch.bin
-│   ├── mb_retarg_nocompress_38
-│   │   ├── best_epoch.bin
+│   ├── mb_retarg_compress_38_oodtest
 │   │   ├── config.yaml
-│   │   ├── epoch_29.bin
-│   │   ├── epoch_59.bin
 │   │   └── latest_epoch.bin
 │   ├── pose3d
 │   │   ├── FT_MB_lite_MB_ft_h36m_global_lite
