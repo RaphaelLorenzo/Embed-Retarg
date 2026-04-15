@@ -146,7 +146,12 @@ class EmbedRetargDataset(Dataset):
         self.files = files
         print(f"Subset {subset} : Found {len(self.files)} files")            
         
-        if subset.startswith("sp_"):
+        
+        if subset == "sp_all":
+            invalid_filenames = ["motion_shape_g1.npz"]
+            self.files = [file for file in self.files if not any(invalid_filename in file for invalid_filename in invalid_filenames)]
+        
+        elif subset.startswith("sp_"):
             invalid_filenames = ["motion_shape_g1.npz", "random_shape_"]
             sp_name_split = subset.split("_")
             assert len(sp_name_split) == 3, "Special subset must be of the form sp_XXX_N"

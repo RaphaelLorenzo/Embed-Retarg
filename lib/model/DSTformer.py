@@ -275,9 +275,10 @@ class DSTformer(nn.Module):
                  qkv_bias=True, qk_scale=None, drop_rate=0., 
                  attn_drop_rate=0., drop_path_rate=0., 
                  norm_layer=nn.LayerNorm, att_fuse=True,
-                 num_new_joints=0):
+                 num_new_joints=0, use_compression=False):
         
         super().__init__()
+        self.use_compression = use_compression
         self.dim_out = dim_out
         self.dim_feat = dim_feat
         self.dim_reduced = dim_rep // 8
@@ -304,7 +305,6 @@ class DSTformer(nn.Module):
             ]))
         else:
             self.pre_logits = nn.Identity()
-        # self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity() 
         self.temp_embed = nn.Parameter(torch.zeros(1, maxlen, 1, dim_feat))
         self.pos_embed = nn.Parameter(torch.zeros(1, num_joints, dim_feat))
         trunc_normal_(self.temp_embed, std=.02)
@@ -321,9 +321,11 @@ class DSTformer(nn.Module):
         # self.map_to_new_joints = nn.Linear(dim_feat*num_joints, dim_feat*num_new_joints) # e.g. 17x512 -> 38x512 (169M params !)
         self.map_to_new_joints = nn.Linear(num_joints, num_new_joints) if num_new_joints > 0 else None # much lighter
         
-        self.reduce_dim = nn.Linear(dim_rep, dim_rep//8)
-        self.reduced_head = nn.Linear(dim_rep//8, dim_out) if dim_out > 0 else nn.Identity()
-        
+        if self.use_compression:
+            self.reduce_dim = nn.Linear(dim_rep, dim_rep//8)
+            self.reduced_head = nn.Linear(dim_rep//8, dim_out) if dim_out > 0 else nn.Identity()
+        else:
+            self.head = nn.Linear(dim_rep, dim_out) if dim_out > 0 else nn.Identity() 
         
     def _init_weights(self, m):
         if isinstance(m, nn.Linear):
@@ -342,6 +344,8 @@ class DSTformer(nn.Module):
         self.head = nn.Linear(self.dim_feat, dim_out) if dim_out > 0 else nn.Identity()
 
     def forward(self, x, return_rep:Union[str, None]=None):   
+        if return_rep == "reduced" and not self.use_compression:
+            raise ValueError("Reduced representation is not available when use_compression is False")
         B, T, J, C = x.shape
         x = x.reshape(-1, J, C)
         BF = x.shape[0]
@@ -372,15 +376,20 @@ class DSTformer(nn.Module):
         
             if return_rep == "full":
                 return x
-        
-            x = self.reduce_dim(x)
             
-            if return_rep == "reduced":
+            if self.use_compression:
+                x = self.reduce_dim(x)
+                
+                if return_rep == "reduced":
+                    return x
+                
+                x = self.reduced_head(x) # [B, T, J, dim_out]
                 return x
             
-            x = self.reduced_head(x) # [B, T, J, dim_out]
-            return x
-        
+            else:
+                x = self.head(x) # [B, T, J, dim_out]
+                return x
+            
         else:
             x = einops.rearrange(x, 'b t j c -> b t c j') # [B, T, C, J]
             x = self.map_to_new_joints(x) # [B, T, C, J_new]
@@ -388,17 +397,32 @@ class DSTformer(nn.Module):
             
             if return_rep == "full":
                 return x
-
-            x = self.reduce_dim(x)
             
-            if return_rep == "reduced":
+            if self.use_compression:
+
+                x = self.reduce_dim(x)
+                
+                if return_rep == "reduced":
+                    return x
+                
+                x = self.reduced_head(x) # [B, T, J, dim_out]
                 return x
             
-            x = self.reduced_head(x) # [B, T, J, dim_out]
-            return x
+            else:
+                x = self.head(x) # [B, T, J_new, dim_out]
+                return x
+        
 
     def get_full_features(self, x) -> torch.Tensor:
         return self.forward(x, return_rep="full") # [B, T, J, dim_rep]
     
     def get_reduced_features(self, x) -> torch.Tensor:
         return self.forward(x, return_rep="reduced") # [B, T, J, dim_rep//8]
+    
+    def get_features(self, x, type="full") -> torch.Tensor:
+        if type == "full":
+            return self.forward(x, return_rep="full") # [B, T, J, dim_rep]
+        elif type == "reduced":
+            return self.forward(x, return_rep="reduced") # [B, T, J, dim_rep//8]
+        else:
+            raise ValueError(f"Invalid type: {type}")
