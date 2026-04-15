@@ -64,7 +64,11 @@ python ./tools/vis_vispy.py ./results/model_mb_retarg_compress_17/inference_2026
 
 ## Training
 
-TODO
+```
+python train_embedretarg.py --config ./configs/pose3d/MB_ft_embedretarg_noremap_testmartialart.yaml
+```
+
+It will train from pretrained MotionBERT checkpoint with the specified config and save the model weights and a copy of the config in `./checkpoints/[YYYY_MM_DD_HH_MM_SS]`.
 
 ## Directory structure
 
