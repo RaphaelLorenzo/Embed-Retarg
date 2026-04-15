@@ -1,6 +1,6 @@
 # Embed-Retarg
 
-Compute embeddings and/or retargeted movement using MotionBERT backbone. Mostly based on : 
+Compute embeddings and/or retargeted movement using MotionBERT backbone. Mostly based on : https://github.com/Walter0807/MotionBERT
 
 ![Illustration](illustration.png)
 
