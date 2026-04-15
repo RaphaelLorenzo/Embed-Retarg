@@ -9,6 +9,7 @@ from functools import partial
 from itertools import repeat
 from lib.model.drop import DropPath
 import einops
+from typing import Union
 
 def _no_grad_trunc_normal_(tensor, mean, std, a, b):
     # Cut & paste from PyTorch official master until it's in a few official releases - RW
@@ -340,7 +341,7 @@ class DSTformer(nn.Module):
         self.dim_out = dim_out
         self.head = nn.Linear(self.dim_feat, dim_out) if dim_out > 0 else nn.Identity()
 
-    def forward(self, x, return_rep=False):   
+    def forward(self, x, return_rep:Union[str, None]=None):   
         B, T, J, C = x.shape
         x = x.reshape(-1, J, C)
         BF = x.shape[0]
@@ -366,21 +367,38 @@ class DSTformer(nn.Module):
         x = self.norm(x)
         x = x.reshape(B, T, J, -1)
         x = self.pre_logits(x)         # [B, T, J, dim_feat]
-        if return_rep:
-            return x
-        
+
         if not self.map_to_new_joints:
+        
+            if return_rep == "full":
+                return x
+        
             x = self.reduce_dim(x)
+            
+            if return_rep == "reduced":
+                return x
+            
             x = self.reduced_head(x) # [B, T, J, dim_out]
             return x
+        
         else:
             x = einops.rearrange(x, 'b t j c -> b t c j') # [B, T, C, J]
             x = self.map_to_new_joints(x) # [B, T, C, J_new]
             x = einops.rearrange(x, 'b t c j -> b t j c') # [B, T, J_new, C]
+            
+            if return_rep == "full":
+                return x
+
             x = self.reduce_dim(x)
+            
+            if return_rep == "reduced":
+                return x
+            
             x = self.reduced_head(x) # [B, T, J, dim_out]
             return x
 
-    def get_representation(self, x):
-        return self.forward(x, return_rep=True) # [B, T, J, dim_feat]
+    def get_full_features(self, x):
+        return self.forward(x, return_rep="full") # [B, T, J, dim_rep]
     
+    def get_reduced_features(self, x):
+        return self.forward(x, return_rep="reduced") # [B, T, J, dim_rep//8]

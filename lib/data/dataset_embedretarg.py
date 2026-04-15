@@ -187,7 +187,9 @@ class EmbedRetargDataset(Dataset):
             body_pos_w = data['body_pos_w']
             seq_len = body_pos_w.shape[0]
             
-            if seq_len > self.clip_len:
+            if self.clip_len > 0 and seq_len >= self.clip_len:
+                
+                # for training / validation, fixed size output with strides
                 for seq_idx,i in enumerate(range(0, seq_len, self.stride)):
                     if i + self.clip_len > seq_len:
                         # too short sequence, skip
@@ -219,14 +221,19 @@ class EmbedRetargDataset(Dataset):
                         if not np.all(angles > -30.0):
                             rejected_inputs.append((file, seq_idx, i, i + self.clip_len, "too far on the left or right of the camera"))
                             continue
-                    
-            elif seq_len == self.clip_len:
-                self.inputs.append((file, 0, 0, seq_len))
                 
-            else:
+            elif self.clip_len > 0 and seq_len < self.clip_len:
                 # too short sequence, skip
                 rejected_inputs.append((file, 0, 0, seq_len, "too short seq"))
                 continue
+            
+            elif self.clip_len <= 0:
+                # full sequence, made to be used for full inference with batch size of 1 because variable length
+                self.inputs.append((file, 0, 0, seq_len))
+            
+            else:
+                raise ValueError(f"Invalid clip length: {self.clip_len} vs sequence length: {seq_len}")
+            
         
         print(f"Subset {subset} : Accepted {len(self.inputs)} inputs")
         print(f"Subset {subset} : Rejected {len(rejected_inputs)} inputs")
