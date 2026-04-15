@@ -6,4 +6,6 @@ __pycache__
 *.mp4
 *.npy
 *.npz
-checkpoints/2026_*
+checkpoints/2026*
+hide/
+*.zip

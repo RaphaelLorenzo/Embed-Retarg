@@ -20,7 +20,7 @@ dim_rep: 512
 num_heads: 8
 att_fuse: True
 num_joints: 17 # original joint numbers in pretrained model
-remap_joints_head: False
+remap_joints_head: True
 use_compression: True
 
 # Data
@@ -30,7 +30,7 @@ data_stride: 81
 rootrel: True
 scale_by: "sequence"
 scale_range: [1,1]
-test_keywords: ["MartialArtsStances_c3d"]
+test_keywords: []
 
 # Loss
 lambda_3d_velocity: 0.0

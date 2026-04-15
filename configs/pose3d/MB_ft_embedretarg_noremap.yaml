@@ -5,7 +5,7 @@ pretrained_checkpoint: checkpoints/pretrain/latest_epoch.bin
 # Traning 
 epochs: 60
 checkpoint_frequency: 30
-batch_size: 16
+batch_size: 2
 dropout: 0.0
 learning_rate: 0.0002
 weight_decay: 0.01
@@ -20,12 +20,12 @@ dim_rep: 512
 num_heads: 8
 att_fuse: True
 num_joints: 17 # original joint numbers in pretrained model
-remap_joints_head: True
-use_compression: False
+remap_joints_head: False
+use_compression: True
 
 # Data
 data_path: ../accad_subset_random_shapes
-clip_len: 243
+clip_len: 81
 data_stride: 81
 rootrel: True
 scale_by: "sequence"
